@@ -1,0 +1,598 @@
+﻿id: OLF
+name: 'OptionsList Field Problems'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Fields with defined options that have one of the following problems: Default value isn't one of the defined options. Options set doesn't have any options. Option value data type doesn't appear to match the field data type. Option has a space in its value.
+
+source:
+  file: files/source/MsCop/OptionsListFields.xsl
+  module_id: OLF
+  templates:
+    - OptionsListFields
+    - OLF_XML
+    - OLF_HTML
+    - OLF_Data
+    - OLF_AddRow_XML
+    - OLF_AddRow_HTML
+    - OLF_AddParam_BadDefault
+    - OLF_AddParam_MissingOptions
+    - OLF_AddParam_TypeMismatch
+    - OLF_AddParam_SpaceInValue
+
+target:
+  primary_selector: >
+    //public[definition/options]
+  inspected_selectors:
+    - >
+        //public[definition/options]
+    - >
+        @id
+    - >
+        @type
+    - >
+        rules/default/@value
+    - >
+        definition/options
+    - >
+        definition/options/option
+    - >
+        definition/options[option]
+    - >
+        definition/options/option[contains(@value,' ')]
+    - >
+        option
+    - >
+        @value
+    - >
+        @name
+    - >
+        @idref
+    - >
+        @codeRef
+    - >
+        @serviceType
+    - >
+        @serviceType
+    - >
+        @value
+    - >
+        @verb
+    - >
+        responsePath
+    - >
+        captionPath
+    - >
+        valuePath
+    - >
+        odbc/connection
+    - >
+        odbc/view
+    - >
+        dataService/dataKey
+    - >
+        @validRef
+    - >
+        @caption
+
+condition:
+  type: deterministic_options_validation
+  rule: >
+    Evaluate each public field containing definition/options. Emit one or more
+    findings for bad defaults, missing option values, option type mismatches,
+    and option values containing spaces, using the exact branching semantics
+    of the source XSL.
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: OLF
+      handling: >
+        Apply configured OLF field exclusions during candidate evaluation.
+        The current AgentRules exclusion configuration is authoritative at runtime.
+    legacy:
+      - CustomExclusions/module[@id='OLF']/field/@id
+      - BaseExclusions/module[@id='OLF']/field/@id
+      handling: >
+        Preserve these expressions for source traceability; do not require
+        the legacy exclusion files to execute the rule.
+
+  bad_default:
+    predicate: >
+      rules/default/@value exists and definition/options/option exists, but
+      no definition/options/option has @value equal to rules/default/@value.
+    param_type: 'Bad Default'
+    comment: >
+      Default value of {default} does not exist in any OptionSet.
+
+  missing_option_values:
+    evaluation: >
+      Evaluate each definition/options in document order and emit one finding
+      according to the first matching source-XSL branch.
+    branches:
+      - condition: >
+          @name exists and @idref='' and @name=''
+        param_type: 'Missing Option Values'
+        comment: >
+          No options exist (OptionSet:{position})
+      - condition: >
+          @codeRef exists and @codeRef=''
+        param_type: 'Missing Option Values'
+        comment: >
+          No options exist (OptionSet:{position})
+      - condition: >
+          dataService and (
+            dataService/@serviceType='' or
+            (dataService/@value and dataService/@value='') or
+            (dataService/@idref and dataService/@idref='') or
+            not(dataService/dataKey) or
+            count(dataService//dataKey[
+              @name='' or
+              (@value and @value='') or
+              (@idref and @idref='')
+            ]) > 0
+          )
+        param_type: 'Missing Option Values'
+        comment: >
+          No options exist (OptionSet:{position})
+      - condition: >
+          request and (
+            request/@verb='' or
+            (request/responsePath/@value and request/responsePath/@value='') or
+            (request/responsePath/@idref and request/responsePath/@idref='') or
+            (request/captionPath/@value and request/captionPath/@value='') or
+            (request/captionPath/@idref and request/captionPath/@idref='') or
+            (request/valuePath/@value and request/valuePath/@value='') or
+            (request/valuePath/@idref and request/valuePath/@idref='')
+          )
+        param_type: 'Missing Option Values'
+        comment: >
+          No options exist (OptionSet:{position})
+      - condition: >
+          odbc and (
+            (odbc/connection/@value and odbc/connection/@value='') or
+            (odbc/connection/@idref and odbc/connection/@idref='') or
+            (odbc/view/@value and odbc/view/@value='') or
+            (odbc/view/@idref and odbc/view/@idref='') or
+            (odbc/captionPath/@value and odbc/captionPath/@value='') or
+            (odbc/captionPath/@idref and odbc/captionPath/@idref='') or
+            (odbc/valuePath/@value and odbc/valuePath/@value='') or
+            (odbc/valuePath/@idref and odbc/valuePath/@idref='')
+          )
+        param_type: 'Missing Option Values'
+        comment: >
+          No options exist (OptionSet:{position})
+      - condition: >
+          not(option) and not(odbc) and not(request) and
+          not(dataService) and not(@name) and not(@codeRef)
+        param_type: 'Missing Option Values'
+        comment: >
+          No options exist (OptionSet:{position})
+
+  type_mismatch:
+    scope: >
+      Evaluate every option in every definition/options element containing
+      option children.
+    boolean:
+      field_type: boolean
+      violation: >
+        @value is neither '0' nor '1'.
+    int:
+      field_type: int
+      violation: >
+        string(number(@value))='NaN' or contains(number(@value),'.')
+    float:
+      field_type: float
+      violation: >
+        string(number(@value))='NaN'
+    ignored_field_types:
+      - date
+      - datetime
+      - time
+      - string
+    param_type: 'Type Mismatch'
+    comment: >
+      Value: {value} does not match the field data type of {fieldDataType}
+      (OptionSet:{optionSetPosition}/Option:{optionPosition})
+
+  space_in_value:
+    scope: >
+      Evaluate every definition/options/option whose @value contains a space
+      character.
+    predicate: >
+      contains(@value,' ')
+    param_type: 'Space In Value'
+    comment: >
+      Option Set: {validRef_or_Default}, Value: {value}, Caption: {caption}
+
+validation_procedure:
+  type: powershell_xml_options_validation
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the OLF XSL semantics deterministically for each applicable
+    public field, including the four source-defined problem categories and
+    the source ordering of option sets and options.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    $fields = $xml.SelectNodes("//public[definition/options]")
+
+    foreach ($field in $fields) {
+        $fieldID = $field.GetAttribute("id")
+        $fieldDataType = $field.GetAttribute("type")
+
+        $defaultNode = $field.SelectSingleNode("rules/default/@value")
+
+        if ($defaultNode) {
+            $defaultValue = $defaultNode.Value
+            $options = @($field.SelectNodes("definition/options/option"))
+
+            if ($options.Count -gt 0) {
+                $defaultExists = $false
+
+                foreach ($option in $options) {
+                    if ($option.GetAttribute("value") -ceq $defaultValue) {
+                        $defaultExists = $true
+                        break
+                    }
+                }
+
+                if (-not $defaultExists) {
+                    $results.Add(
+                        [PSCustomObject]@{
+                            fieldID = $fieldID
+                            paramType = "Bad Default"
+                            comments = "Default value of $defaultValue does not exist in any OptionSet."
+                        }
+                    )
+                }
+            }
+        }
+
+        $optionSets = @($field.SelectNodes("definition/options"))
+
+        for ($optionSetIndex = 0; $optionSetIndex -lt $optionSets.Count; $optionSetIndex++) {
+            $optionSet = $optionSets[$optionSetIndex]
+            $optionSetPosition = $optionSetIndex + 1
+            $missingOptions = $false
+
+            if (
+                $optionSet.HasAttribute("name") -and
+                $optionSet.GetAttribute("idref") -eq "" -and
+                $optionSet.GetAttribute("name") -eq ""
+            ) {
+                $missingOptions = $true
+            }
+            elseif (
+                $optionSet.HasAttribute("codeRef") -and
+                $optionSet.GetAttribute("codeRef") -eq ""
+            ) {
+                $missingOptions = $true
+            }
+            elseif ($optionSet.SelectSingleNode("dataService")) {
+                $dataService = $optionSet.SelectSingleNode("dataService")
+
+                $invalid = (
+                    $dataService.GetAttribute("serviceType") -eq "" -or
+                    (
+                        $dataService.HasAttribute("value") -and
+                        $dataService.GetAttribute("value") -eq ""
+                    ) -or
+                    (
+                        $dataService.HasAttribute("idref") -and
+                        $dataService.GetAttribute("idref") -eq ""
+                    ) -or
+                    -not $dataService.SelectSingleNode("dataKey") -or
+                    $dataService.SelectNodes("dataKey[@name='' or (@value and @value='') or (@idref and @idref='')]").Count -gt 0
+                )
+
+                if ($invalid) {
+                    $missingOptions = $true
+                }
+            }
+            elseif ($optionSet.SelectSingleNode("request")) {
+                $request = $optionSet.SelectSingleNode("request")
+
+                $invalid = (
+                    $request.GetAttribute("verb") -eq "" -or
+                    (
+                        $request.SelectSingleNode("responsePath/@value") -and
+                        $request.SelectSingleNode("responsePath/@value").Value -eq ""
+                    ) -or
+                    (
+                        $request.SelectSingleNode("responsePath/@idref") -and
+                        $request.SelectSingleNode("responsePath/@idref").Value -eq ""
+                    ) -or
+                    (
+                        $request.SelectSingleNode("captionPath/@value") -and
+                        $request.SelectSingleNode("captionPath/@value").Value -eq ""
+                    ) -or
+                    (
+                        $request.SelectSingleNode("captionPath/@idref") -and
+                        $request.SelectSingleNode("captionPath/@idref").Value -eq ""
+                    ) -or
+                    (
+                        $request.SelectSingleNode("valuePath/@value") -and
+                        $request.SelectSingleNode("valuePath/@value").Value -eq ""
+                    ) -or
+                    (
+                        $request.SelectSingleNode("valuePath/@idref") -and
+                        $request.SelectSingleNode("valuePath/@idref").Value -eq ""
+                    )
+                )
+
+                if ($invalid) {
+                    $missingOptions = $true
+                }
+            }
+            elseif ($optionSet.SelectSingleNode("odbc")) {
+                $odbc = $optionSet.SelectSingleNode("odbc")
+
+                $invalid = (
+                    (
+                        $odbc.SelectSingleNode("connection/@value") -and
+                        $odbc.SelectSingleNode("connection/@value").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("connection/@idref") -and
+                        $odbc.SelectSingleNode("connection/@idref").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("view/@value") -and
+                        $odbc.SelectSingleNode("view/@value").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("view/@idref") -and
+                        $odbc.SelectSingleNode("view/@idref").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("captionPath/@value") -and
+                        $odbc.SelectSingleNode("captionPath/@value").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("captionPath/@idref") -and
+                        $odbc.SelectSingleNode("captionPath/@idref").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("valuePath/@value") -and
+                        $odbc.SelectSingleNode("valuePath/@value").Value -eq ""
+                    ) -or
+                    (
+                        $odbc.SelectSingleNode("valuePath/@idref") -and
+                        $odbc.SelectSingleNode("valuePath/@idref").Value -eq ""
+                    )
+                )
+
+                if ($invalid) {
+                    $missingOptions = $true
+                }
+            }
+            elseif (
+                $optionSet.SelectNodes("option").Count -eq 0 -and
+                -not $optionSet.SelectSingleNode("odbc") -and
+                -not $optionSet.SelectSingleNode("request") -and
+                -not $optionSet.SelectSingleNode("dataService") -and
+                -not $optionSet.HasAttribute("name") -and
+                -not $optionSet.HasAttribute("codeRef")
+            ) {
+                $missingOptions = $true
+            }
+
+            if ($missingOptions) {
+                $results.Add(
+                    [PSCustomObject]@{
+                        fieldID = $fieldID
+                        paramType = "Missing Option Values"
+                        comments = "No options exist (OptionSet:$optionSetPosition)"
+                    }
+                )
+            }
+
+            $options = @($optionSet.SelectNodes("option"))
+
+            for ($optionIndex = 0; $optionIndex -lt $options.Count; $optionIndex++) {
+                $option = $options[$optionIndex]
+                $optionPosition = $optionIndex + 1
+                $value = $option.GetAttribute("value")
+
+                if ($fieldDataType -eq "boolean") {
+                    if ($value -ne "0" -and $value -ne "1") {
+                        $results.Add(
+                            [PSCustomObject]@{
+                                fieldID = $fieldID
+                                paramType = "Type Mismatch"
+                                comments = " Value: $value does not match the field data type of $fieldDataType (OptionSet:$optionSetPosition/Option:$optionPosition)"
+                            }
+                        )
+                    }
+                }
+                elseif ($fieldDataType -eq "int") {
+                    $number = 0.0
+                    $isNaN = -not [double]::TryParse(
+                        $value,
+                        [System.Globalization.NumberStyles]::Float,
+                        [System.Globalization.CultureInfo]::InvariantCulture,
+                        [ref]$number
+                    )
+
+                    if ($isNaN -or $number.ToString([System.Globalization.CultureInfo]::InvariantCulture).Contains(".")) {
+                        $results.Add(
+                            [PSCustomObject]@{
+                                fieldID = $fieldID
+                                paramType = "Type Mismatch"
+                                comments = " Value: $value does not match the field data type of $fieldDataType (OptionSet:$optionSetPosition/Option:$optionPosition)"
+                            }
+                        )
+                    }
+                }
+                elseif ($fieldDataType -eq "float") {
+                    $number = 0.0
+                    $isNaN = -not [double]::TryParse(
+                        $value,
+                        [System.Globalization.NumberStyles]::Float,
+                        [System.Globalization.CultureInfo]::InvariantCulture,
+                        [ref]$number
+                    )
+
+                    if ($isNaN) {
+                        $results.Add(
+                            [PSCustomObject]@{
+                                fieldID = $fieldID
+                                paramType = "Type Mismatch"
+                                comments = " Value: $value does not match the field data type of $fieldDataType (OptionSet:$optionSetPosition/Option:$optionPosition)"
+                            }
+                        )
+                    }
+                }
+
+                if ($value.Contains(" ")) {
+                    $validRef = $optionSet.GetAttribute("validRef")
+                    if ([string]::IsNullOrEmpty($validRef)) {
+                        $validRef = "Default"
+                    }
+
+                    $caption = $option.GetAttribute("caption")
+
+                    $results.Add(
+                        [PSCustomObject]@{
+                            fieldID = $fieldID
+                            paramType = "Space In Value"
+                            comments = "Option Set: $validRef, Value: $value, Caption: $caption"
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    $results |
+        Sort-Object paramType, fieldID |
+        ForEach-Object {
+            $_
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport, quoting, escaping, and result collection required to execute the command_template safely.
+    - >
+      Candidate exclusions from AgentRules/Exclusions.yaml must be applied according to the active OLF exclusion configuration.
+    - >
+      Preserve the source XSL's first-match xsl:choose behavior for Missing Option Values.
+    - >
+      Preserve the source XSL's separate findings for each option type mismatch and each option containing a space.
+    - >
+      Do not apply type-mismatch validation to date, datetime, time, or string fields.
+    - >
+      A transport or invocation failure must be retried through permitted runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - fieldID
+    - paramType
+    - comments
+  multiplicity: >
+    A field may produce multiple findings: one bad-default finding, one finding
+    per missing-option option set, one finding per type-mismatched option, and
+    one finding per option containing a space.
+  sort:
+    - paramType
+    - fieldID
+  result_gate: >
+    Emit only findings satisfying one of the four source-defined OLF problem
+    categories.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - fieldID
+    - paramType
+    - comments
+    - value
+    - optionSetPosition
+    - optionPosition
+
+expected:
+  pass: >
+    All applicable public fields with definition/options have valid defaults,
+    valid option-set definitions, option values compatible with the supported
+    field data types, and no option values containing spaces.
+  violation: >
+    At least one OLF problem category is detected for an applicable public field.
+
+violation:
+  title: 'OptionsList Field Problem'
+  message: >
+    Field '{fieldID}' has an OptionsList problem of type '{paramType}': {comments}
+  severity: Standards
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //public[definition/options and not(@id = msxsl:node-set($CustomExclusions)/module[@id='OLF']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='OLF']/field/@id)]
+    - >
+        rules/default/@value
+    - >
+        definition/options/option[@value = $fieldDefaultVal]
+    - >
+        definition/options
+    - >
+        @name and (@idref='' and @name='')
+    - >
+        @codeRef and @codeRef =''
+    - >
+        dataService and (dataService/@serviceType='' or (dataService/@value and dataService/@value='') or (dataService/@idref and dataService/@idref='') or not(dataService/dataKey) or count(dataService//dataKey[@name='' or (@value and @value='') or (@idref and @idref='')])>0)
+    - >
+        request and (request/@verb='' or (request/responsePath/@value and request/responsePath/@value='') or (request/responsePath/@idref and request/responsePath/@idref='') or (request/captionPath/@value and request/captionPath/@value='') or (request/captionPath/@idref and request/captionPath/@idref='') or (request/valuePath/@value and request/valuePath/@value='') or (request/valuePath/@idref and request/valuePath/@idref=''))
+    - >
+        odbc and ((odbc/connection/@value and odbc/connection/@value='') or (odbc/connection/@idref and odbc/connection/@idref='') or (odbc/view/@value and odbc/view/@value='') or (odbc/view/@idref and odbc/view/@idref='') or (odbc/captionPath/@value and odbc/captionPath/@value='') or (odbc/captionPath/@idref and odbc/captionPath/@idref='') or (odbc/valuePath/@value and odbc/valuePath/@value='') or (odbc/valuePath/@idref and odbc/valuePath/@idref=''))
+    - >
+        not(option) and not(odbc) and not(request) and not(dataService) and not(@name) and not(@codeRef)
+    - >
+        $fieldDataType='boolean'
+    - >
+        not(@value='0' or @value='1')
+    - >
+        $fieldDataType='int'
+    - >
+        string(number(@value))='NaN' or contains(number(@value),'.')
+    - >
+        $fieldDataType='float'
+    - >
+        string(number(@value))='NaN'
+    - >
+        $fieldDataType='date'
+    - >
+        $fieldDataType='datetime'
+    - >
+        $fieldDataType='time'
+    - >
+        $fieldDataType='string'
+    - >
+        definition/options/option[contains(@value,' ')]
+
+notes:
+  - >
+    The source XSL evaluates only public fields containing definition/options.
+  - >
+    Missing Option Values uses xsl:choose, so only the first matching missing-option branch is emitted for each option set.
+  - >
+    Type Mismatch is checked only for boolean, int, and float field types.
+  - >
+    Date, datetime, time, and string types are explicitly ignored by the source XSL.
+  - >
+    Space In Value is emitted independently for every option whose value contains a space.
+  - >
+    Results are sorted by paramType and then fieldID.
+  - >
+    Legacy CustomExclusions and BaseExclusions are retained for source traceability; AgentRules/Exclusions.yaml is authoritative for current runtime exclusions.

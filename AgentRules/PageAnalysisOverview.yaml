@@ -1,0 +1,372 @@
+﻿id: PAO
+name: 'Page Analysis Overview'
+category: 'Performance'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This lists all pages in the ManuScript with some high level information about each. This is raw data and should be analyzed more closely before making any major decisions.
+
+source:
+  file: files/source/MsCop/PageAnalysisOverview.xsl
+  module_id: PAO
+  templates:
+    - PageAnalysisOverview
+    - PAO_XML
+    - PAO_HTML
+    - PAO_Data
+    - PAO_AddRow_XML
+    - PAO_AddRow_HTML
+
+target:
+  primary_selector: >
+    topics/topic/page[not(@manuscriptIdRef)]
+  inspected_selectors:
+    - >
+        topics/topic/page[not(@manuscriptIdRef)]
+    - >
+        count(.//reference)
+    - >
+        count(.//@onBlur)
+    - >
+        count(./*//@validRef)
+    - >
+        count(.//reference[nameValues/nameValue[@name='eliminate']])
+    - >
+        count(.//request)
+    - >
+        count(.//widget) + count(.//xhtml) + count(.//grid)
+    - >
+        @calculate
+    - >
+        count(.//grid[../@iterMax='*' and key('IterativeGroup',../@object)])
+    - >
+        msxsl:node-set($rows)/row
+    - >
+        @pageSet
+    - >
+        @pageID
+    - >
+        @fieldCount
+    - >
+        @refreshCount
+    - >
+        @showCount
+    - >
+        @hideCount
+    - >
+        @requestCount
+    - >
+        @widgetCount
+    - >
+        @calculate
+    - >
+        @unrestrictedGridCount
+
+condition:
+  type: deterministic_page_analysis
+  rule: >
+    Evaluate every topics/topic/page that does not have a manuscriptIdRef attribute
+    and calculate the exact page-level metrics produced by the PAO XSL.
+  page_exclusion:
+    predicate: >
+      not(@manuscriptIdRef)
+    handling: >
+      Reference pages identified by manuscriptIdRef are excluded. The source XSL
+      does not apply CustomExclusions or BaseExclusions to PAO.
+  calculations:
+    calculate:
+      source_logic: >
+        If @calculate exists and equals '1', return 'Calc'. If @calculate exists
+        and equals '2', return 'Calc and Accept'. For any other existing @calculate
+        value, or when @calculate does not exist, return 'No'.
+    fieldCount:
+      expression: count(.//reference)
+    refreshCount:
+      expression: count(.//@onBlur)
+    showCount:
+      expression: count(./*//@validRef)
+    hideCount:
+      expression: count(.//reference[nameValues/nameValue[@name='eliminate']])
+    requestCount:
+      expression: count(.//request)
+    widgetCount:
+      expression: count(.//widget) + count(.//xhtml) + count(.//grid)
+    unrestrictedGridCount:
+      expression: >
+        count(.//grid[../@iterMax='*' and key('IterativeGroup',../@object)])
+      iterative_group_definition: >
+        An object is an iterative group when minOccurs/@value='0', or
+        maxOccurs/@value > 1 or maxOccurs/@value='*', or minOccurs/@idref
+        exists, or maxOccurs/@idref exists.
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: PAO
+      handling: >
+        No field exclusion is defined by the source XSL. PAO page selection is
+        governed by not(@manuscriptIdRef).
+    legacy:
+      handling: >
+        The source explicitly notes that there are no Base Exclusions for this
+        module and that excluding by page name would cause the page to vanish.
+        No static exclusion membership is inferred.
+
+validation_procedure:
+  type: powershell_xml_page_analysis
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the PAO XSL page selection and all calculated page metrics
+    deterministically for each XML file.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $iterativeGroups = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+
+    foreach ($object in $xml.SelectNodes("//object")) {
+        $isIterative = $false
+
+        $minValue = $object.SelectSingleNode("minOccurs/@value")
+        if ($minValue -and $minValue.Value -eq "0") {
+            $isIterative = $true
+        }
+
+        $maxValue = $object.SelectSingleNode("maxOccurs/@value")
+        if ($maxValue) {
+            if ($maxValue.Value -eq "*") {
+                $isIterative = $true
+            }
+            else {
+                $maxNumber = 0.0
+                if (
+                    [double]::TryParse(
+                        $maxValue.Value,
+                        [System.Globalization.NumberStyles]::Float,
+                        [System.Globalization.CultureInfo]::InvariantCulture,
+                        [ref]$maxNumber
+                    ) -and
+                    $maxNumber -gt 1
+                ) {
+                    $isIterative = $true
+                }
+            }
+        }
+
+        if ($object.SelectSingleNode("minOccurs/@idref")) {
+            $isIterative = $true
+        }
+
+        if ($object.SelectSingleNode("maxOccurs/@idref")) {
+            $isIterative = $true
+        }
+
+        $objectID = $object.GetAttribute("id")
+        if ($isIterative -and $objectID) {
+            [void]$iterativeGroups.Add($objectID)
+        }
+    }
+
+    $rows = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($page in $xml.SelectNodes("topics/topic/page[not(@manuscriptIdRef)]")) {
+        $calculate = "No"
+
+        if ($page.HasAttribute("calculate")) {
+            switch ($page.GetAttribute("calculate")) {
+                "1" {
+                    $calculate = "Calc"
+                }
+                "2" {
+                    $calculate = "Calc and Accept"
+                }
+                default {
+                    $calculate = "No"
+                }
+            }
+        }
+
+        $fieldCount = $page.SelectNodes(".//reference").Count
+        $refreshCount = $page.SelectNodes(".//@onBlur").Count
+        $showCount = $page.SelectNodes("./*//@validRef").Count
+        $hideCount = $page.SelectNodes(".//reference[nameValues/nameValue[@name='eliminate']]").Count
+        $requestCount = $page.SelectNodes(".//request").Count
+        $widgetCount =
+            $page.SelectNodes(".//widget").Count +
+            $page.SelectNodes(".//xhtml").Count +
+            $page.SelectNodes(".//grid").Count
+
+        $unrestrictedGridCount = 0
+
+        foreach ($grid in $page.SelectNodes(".//grid")) {
+            $parent = $grid.SelectSingleNode("..")
+
+            if (
+                $parent -and
+                $parent.GetAttribute("iterMax") -eq "*" -and
+                $iterativeGroups.Contains($parent.GetAttribute("object"))
+            ) {
+                $unrestrictedGridCount++
+            }
+        }
+
+        [void]$rows.Add(
+            [PSCustomObject]@{
+                pageSet = $page.ParentNode.GetAttribute("name")
+                pageID = $page.GetAttribute("name")
+                fieldCount = $fieldCount
+                refreshCount = $refreshCount
+                showCount = $showCount
+                hideCount = $hideCount
+                requestCount = $requestCount
+                widgetCount = $widgetCount
+                calculate = $calculate
+                unrestrictedGridCount = $unrestrictedGridCount
+            }
+        )
+    }
+
+    $rows |
+        Sort-Object pageSet, pageID |
+        ForEach-Object {
+            $_
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its
+      semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport,
+      quoting, escaping, and result collection required to execute the
+      command_template safely.
+    - >
+      Do not apply field-level exclusion logic because the source PAO XSL
+      explicitly has no BaseExclusions and selects pages only through
+      not(@manuscriptIdRef).
+    - >
+      Preserve the source XSL's exact calculate mapping: 1 = Calc, 2 = Calc
+      and Accept, otherwise No.
+    - >
+      Preserve the source XSL's iterative-group definition when calculating
+      unrestrictedGridCount.
+    - >
+      A transport or invocation failure must be retried through permitted
+      runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - pageSet
+    - pageID
+    - fieldCount
+    - refreshCount
+    - showCount
+    - hideCount
+    - requestCount
+    - widgetCount
+    - calculate
+    - unrestrictedGridCount
+  multiplicity: >
+    One result row per topics/topic/page that does not have manuscriptIdRef.
+  sort:
+    - pageSet
+    - pageID
+  result_gate: >
+    Emit one page-analysis result for every applicable page, including pages
+    with zero counts.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - pageSet
+    - pageID
+    - fieldCount
+    - refreshCount
+    - showCount
+    - hideCount
+    - requestCount
+    - widgetCount
+    - calculate
+    - unrestrictedGridCount
+
+expected:
+  pass: >
+    Page analysis data is successfully generated for every non-reference page.
+    PAO is a raw performance-analysis dataset rather than a violation-only rule.
+  violation: >
+    PAO produces a page-analysis result containing the calculated metrics.
+    Results should be interpreted as analysis data rather than automatically
+    treated as defects.
+
+violation:
+  title: 'Page Analysis Overview'
+  message: >
+    Page '{pageID}' in PageSet '{pageSet}' has PAO metrics: fields={fieldCount},
+    refreshes={refreshCount}, shows={showCount}, hides={hideCount},
+    requests={requestCount}, widgets={widgetCount}, calculate='{calculate}',
+    unrestrictedGrids={unrestrictedGridCount}.
+  severity: Performance
+
+original_logic:
+  exact_select_expressions:
+    - >
+        topics/topic/page[not(@manuscriptIdRef)]
+    - >
+        @calculate
+    - >
+        count(.//reference)
+    - >
+        count(.//@onBlur)
+    - >
+        count(./*//@validRef)
+    - >
+        count(.//reference[nameValues/nameValue[@name='eliminate']])
+    - >
+        count(.//request)
+    - >
+        count(.//widget) + count(.//xhtml) + count(.//grid)
+    - >
+        count(.//grid[../@iterMax='*' and key('IterativeGroup',../@object)])
+    - >
+        msxsl:node-set($rows)/row
+    - >
+        @pageSet
+    - >
+        @pageID
+    - >
+        @fieldCount
+    - >
+        @refreshCount
+    - >
+        @showCount
+    - >
+        @hideCount
+    - >
+        @requestCount
+    - >
+        @widgetCount
+    - >
+        @calculate
+    - >
+        @unrestrictedGridCount
+
+notes:
+  - >
+    PAO is a raw page-analysis dataset and does not represent a conventional
+    violation-only rule.
+  - >
+    Reference pages with manuscriptIdRef are excluded.
+  - >
+    Results are sorted by pageSet and then pageID.
+  - >
+    No static CustomExclusions or BaseExclusions are applied by the source XSL.
+  - >
+    The source XSL defines unrestrictedGridCount using grids whose parent has
+    iterMax='*' and whose parent object is recognized by the IterativeGroup key.

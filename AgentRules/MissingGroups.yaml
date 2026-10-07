@@ -1,0 +1,276 @@
+﻿id: MG
+name: 'Missing Standard Groups'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  The following Public groups are missing at least one child "Input", "Output",
+  or "Private" group. By standard, every public group should have three child
+  groups for Input, Output, and Private.
+
+source:
+  file: files/source/MsCop/MissingGroups.xsl
+  module_id: MG
+  templates:
+    - MissingGroups
+    - MG_XML
+    - MG_HTML
+    - MG_Data
+    - MG_AddRow_XML
+    - MG_AddRow_HTML
+    - MG_AddColumn
+    - MG_Checkbox
+
+target:
+  primary_selector: >
+    //object[
+      @path and
+      @path!='' and
+      (
+        not(object[@id=concat(../@id,'Input')])
+        or
+        not(object[@id=concat(../@id,'Output')])
+        or
+        not(object[@id=concat(../@id,'Private')])
+      )
+    ]
+  inspected_selectors:
+    - >
+      //object[
+        @path and
+        @path!='' and
+        (
+          not(object[@id=concat(../@id,'Input')])
+          or
+          not(object[@id=concat(../@id,'Output')])
+          or
+          not(object[@id=concat(../@id,'Private')])
+        )
+      ]
+    - >
+      @id
+    - >
+      @path
+    - >
+      object[@id=concat(../@id,'Input')]
+    - >
+      object[@id=concat(../@id,'Output')]
+    - >
+      object[@id=concat(../@id,'Private')]
+  scope: per_xml_file
+
+condition:
+  type: required_child_groups
+  rule: >
+    An object is a candidate when it has a non-empty @path and at least one
+    required child object is missing according to the exact child-ID
+    construction used by the source XSL.
+  required_groups:
+    input:
+      expected_child_id: >
+        concat(../@id,'Input')
+    output:
+      expected_child_id: >
+        concat(../@id,'Output')
+    private:
+      expected_child_id: >
+        concat(../@id,'Private')
+  matching:
+    input:
+      child_exists_when: >
+        object[@id=concat(../@id,'Input')]
+    output:
+      child_exists_when: >
+        object[@id=concat(../@id,'Output')]
+    private:
+      child_exists_when: >
+        object[@id=concat(../@id,'Private')]
+  applicability:
+    path_required: true
+    path_empty: false
+  comparison:
+    type: child_element_id_presence
+    normalization: none
+  scope: per_xml_file
+
+exclusions:
+  - >
+    Candidate-level exclusions are resolved from the current
+    AgentRules/Exclusions.yaml configuration for module MG.
+  - >
+    The original XSL applies CustomExclusions using
+    module[@id='MG']/group/@id.
+  - >
+    The original XSL applies BaseExclusions using
+    module[@id='MG']/object/@id.
+  - >
+    CustomExclusions and BaseExclusions are retained as source traceability;
+    the current AgentRules exclusion configuration is authoritative at runtime.
+
+validation_procedure:
+  type: powershell_xml_missing_group_scan
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+  purpose: >
+    Execute deterministic MG validation against each applicable XML file and
+    report every path-bearing object for which at least one required Input,
+    Output, or Private child object is absent according to the exact source XSL
+    child-ID expressions.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = $xml.SelectNodes("//object[@path and @path!='']") |
+        ForEach-Object {
+            $group = $_
+            $parentID = $group.ParentNode.GetAttribute("id")
+
+            $inputID = $parentID + "Input"
+            $outputID = $parentID + "Output"
+            $privateID = $parentID + "Private"
+
+            $inputExists = $null -ne $group.SelectSingleNode("object[@id='$inputID']")
+            $outputExists = $null -ne $group.SelectSingleNode("object[@id='$outputID']")
+            $privateExists = $null -ne $group.SelectSingleNode("object[@id='$privateID']")
+
+            if (-not $inputExists -or -not $outputExists -or -not $privateExists) {
+                [PSCustomObject]@{
+                    GroupID       = $group.GetAttribute("id")
+                    InputExists   = if ($inputExists) { 1 } else { 0 }
+                    OutputExists  = if ($outputExists) { 1 } else { 0 }
+                    PrivateExists = if ($privateExists) { 1 } else { 0 }
+                }
+            }
+        }
+
+    $results |
+        Sort-Object GroupID |
+        Select-Object GroupID, InputExists, OutputExists, PrivateExists
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of MG validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Candidate exclusions must be applied according to the current
+      AgentRules/Exclusions.yaml configuration.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Do not infer missing groups from filenames, folder names, paths outside
+      the XML, or non-XML metadata.
+    - >
+      A child group is considered present only when its @id exactly matches the
+      corresponding source-XSL constructed ID.
+  result:
+    type: xml_nodes
+    candidate_fields:
+      - GroupID
+      - InputExists
+      - OutputExists
+      - PrivateExists
+  interpretation:
+    violation_when: >
+      A returned group remains after configured MG exclusions are applied and
+      at least one of InputExists, OutputExists, or PrivateExists is 0.
+    no_violation_when: >
+      No applicable path-bearing group remains with a missing required child.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an MG violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the deterministic command_template
+      identifies the group and its missing required child state.
+    - >
+      Excluded candidates are not reported as confirmed violations.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - group_id
+    - input_exists
+    - output_exists
+    - private_exists
+    - exclusion_status
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+    include_group_id: true
+    include_missing_group_types: true
+
+expected:
+  condition: >
+    Every applicable public group should have child groups whose IDs correspond
+    to the required Input, Output, and Private suffixes defined by the source
+    XSL.
+
+violation:
+  when: >
+    An applicable path-bearing object is missing at least one required Input,
+    Output, or Private child object.
+  messages:
+    input: 'Missing Input group'
+    output: 'Missing Output group'
+    private: 'Missing Private group'
+
+original_logic:
+  exact_select_expressions:
+    - >
+      //object[(@path and @path!='') and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MG']/group/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MG']/object/@id) and (not(object[@id = concat(../@id,'Input')]) or not(object[@id = concat(../@id,'Output')]) or not(object[@id = concat(../@id,'Private')]))]
+    - >
+      @id
+    - >
+      1 - $MissingInput
+    - >
+      1 - $MissingOutput
+    - >
+      1 - $MissingPrivate
+    - >
+      $Input
+    - >
+      $Output
+    - >
+      $Private
+    - >
+      $Checked
+  missing_group_tests:
+    input: >
+      not(object[@id = concat(../@id,'Input')])
+    output: >
+      not(object[@id = concat(../@id,'Output')])
+    private: >
+      not(object[@id = concat(../@id,'Private')])
+  output_fields:
+    - groupID
+    - inputExists
+    - outputExists
+    - privateExists
+  sorting:
+    - '@id'
+
+notes:
+  - >
+    The source XSL considers only object elements with a non-empty @path.
+  - >
+    The source XSL constructs the expected child IDs using the immediate
+    parent's @id concatenated with Input, Output, or Private.
+  - >
+    The XML output inverts the internal MissingInput, MissingOutput, and
+    MissingPrivate values so that inputExists, outputExists, and privateExists
+    represent the actual existence state.
+  - >
+    The source XSL sorts candidates by @id before rendering.
+  - >
+    CustomExclusions and BaseExclusions are retained in original_logic for
+    traceability to the legacy XSL and are not independent current runtime
+    exclusion sources.

@@ -1,0 +1,83 @@
+version: "1.0"
+status: READY
+validation: CONFIGURATION
+
+# Exclusions are evaluated after deterministic rule validation identifies
+# a candidate and before the candidate is reported as a confirmed violation.
+
+# Current scope:
+#   MFC - Missing Form Caption
+#   DID - Duplicate ID
+#   HCP - Hard-coded Paths
+
+matching:
+  default_operator: equals
+  comparison: exact
+  case_sensitive: true
+  whitespace_sensitive: true
+  normalization: none
+  conditions: AND
+
+  # If a field is present in an exclusion entry, it must match.
+  # Missing candidate information never counts as a match.
+  partial_match_is_not_exclusion: true
+
+rules:
+  MFC:
+    exclusions_allowed: true
+    target_type: form
+
+  DID:
+    exclusions_allowed: false
+    reason: "DuplicateID is not included in the legacy CustomExclusions mechanism."
+
+  HCP:
+    exclusions_allowed: true
+    target_type: field
+
+exclusions: []
+
+
+# ---------------------------------------------------------------------------
+# EXAMPLE
+# ---------------------------------------------------------------------------
+#
+# Add real exclusions only after a candidate has been identified and the
+# exclusion has been intentionally approved.
+#
+# - id: EX-MFC-001
+#   rule: MFC
+#   action: exclude
+#
+#   match:
+#     scope:
+#       lob:
+#         equals: Property
+#
+#     target:
+#       type:
+#         equals: form
+#       name:
+#         equals: SampleFormName
+#
+#   reason: "Approved MFC exclusion."
+#
+#
+# - id: EX-HCP-001
+#   rule: HCP
+#   action: exclude
+#
+#   match:
+#     scope:
+#       lob:
+#         equals: CommercialAuto
+#
+#     target:
+#       type:
+#         equals: field
+#       id:
+#         equals: Sample.FieldName
+#
+#   reason: "Approved HCP exclusion."
+#
+# DID exclusions are currently disabled.

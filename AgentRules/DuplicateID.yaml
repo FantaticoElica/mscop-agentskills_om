@@ -1,0 +1,267 @@
+﻿id: DID
+name: Duplicate ID
+category: Error
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Detect duplicate IDs in ManuScript XML files. Within each XML document,
+  public, private, and object elements must have unique id attributes.
+
+source:
+  file: files/source/MsCop/DuplicateID.xsl
+  module_id: DID
+  templates:
+    - DuplicateID
+    - DID_XML
+    - DID_Data
+    - DID_AddRow_XML
+    - DID_AddRow_HTML
+
+target:
+  primary_selector: >
+    //public[@id] | //private[@id] | //object[@id]
+
+  inspected_selectors:
+    - >
+        //public[@id] | //private[@id] | //object[@id]
+    - >
+        @id
+
+  element_types:
+    - public
+    - private
+    - object
+
+  attribute: '@id'
+
+  scope: single_xml_document
+
+condition:
+  type: duplicate_value
+  scope: single_xml_document
+
+  comparison:
+    type: exact_string
+    case_sensitive: true
+    whitespace_sensitive: true
+    normalization: none
+
+  rule:
+    - >
+      Consider only public, private, and object elements that contain an
+      id attribute.
+    - >
+      Group id values independently within each XML document.
+    - >
+      Compare ID values using exact ordinal string comparison.
+    - >
+      Do not trim, normalize, lowercase, uppercase, or otherwise transform
+      ID values.
+    - >
+      A duplicate exists only when the exact same id string occurs at least
+      twice within the same XML document.
+    - >
+      Every occurrence belonging to a duplicate group is a confirmed
+      violation.
+    - >
+      IDs appearing in different XML documents must never be compared.
+
+exclusions:
+  - >
+    Elements other than public, private, and object are ignored.
+  - >
+    IDs in different XML documents are never compared.
+  - >
+    Attributes other than id are ignored.
+  - >
+    An element without an id attribute is not part of duplicate-ID
+    evaluation.
+
+validation_procedure:
+  type: powershell_xml_exact_grouping
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Use deterministic XML parsing and exact ordinal string comparison to
+    identify duplicate id values among public, private, and object elements
+    within one XML document.
+
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $groups = [System.Collections.Generic.Dictionary[string,System.Collections.Generic.List[System.Xml.XmlElement]]]::new(
+        [System.StringComparer]::Ordinal
+    )
+
+    foreach ($node in $xml.SelectNodes("//public[@id] | //private[@id] | //object[@id]")) {
+        $id = $node.GetAttribute("id")
+
+        if (-not $groups.ContainsKey($id)) {
+            $groups.Add(
+                $id,
+                [System.Collections.Generic.List[System.Xml.XmlElement]]::new()
+            )
+        }
+
+        $groups[$id].Add($node)
+    }
+
+    $groups.GetEnumerator() |
+        Where-Object { $_.Value.Count -gt 1 } |
+        ForEach-Object {
+            [PSCustomObject]@{
+                ID = $_.Key
+                Count = $_.Value.Count
+                Nodes = $_.Value
+            }
+        }
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its validation semantics.
+    - >
+      Preserve exact ordinal string comparison semantics.
+    - >
+      Preserve case-sensitive and whitespace-sensitive ID comparison.
+    - >
+      Treat the command output as the deterministic duplicate-group
+      candidate set for this rule.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+    - >
+      Do not replace the deterministic validation procedure with an
+      independently implemented XPath, regex, XML parser, LLM inspection,
+      or alternate validator.
+
+  result:
+    type: duplicate_groups
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_groups: >
+      Each returned group represents an exact id value occurring more than
+      once among public, private, and object elements in the current XML
+      document.
+
+    confirmed_violation_requires:
+      - >
+        Every member of the group is a public, private, or object element.
+      - >
+        Every member has an id attribute.
+      - >
+        The exact same id string occurs at least twice in this XML document.
+      - >
+        Comparison is case-sensitive.
+      - >
+        Whitespace is significant.
+      - >
+        No trimming, normalization, case conversion, or other transformation
+        is applied.
+      - >
+        Every occurrence in the duplicate group is reported as a violation.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        Duplicate detection is document-scoped. Never group IDs across XML
+        files.
+      - >
+        Matching uses exact string semantics.
+      - >
+        "APlus" and "Aplus" are different IDs.
+      - >
+        "PrintDoc" and "printDoc" are different IDs.
+      - >
+        Leading, trailing, or internal whitespace is significant.
+      - >
+        Elements other than public, private, and object are ignored.
+      - >
+        The deterministic validation procedure must be applied to the
+        current filesystem rather than relying on previous scan results.
+      - >
+        The validation result must be verified against the current XML
+        before reporting evidence.
+      - >
+        Do not introduce additional duplicate, ID, grouping, comparison,
+        or exclusion conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - element_type
+    - id
+    - location
+    - duplicate_occurrences
+
+  report:
+    include_parent_element: true
+    include_parent_id: true
+    include_relevant_xml: true
+
+expected:
+  condition: >
+    Every public, private, and object element within one XML document has
+    a unique exact id value.
+
+violation:
+  when: >
+    The exact same id value occurs at least twice among public, private,
+    or object elements within one XML document.
+
+original_logic:
+  xsl_key:
+    name: IDMatch
+    match:
+      - public
+      - private
+      - object
+    use: '@id'
+
+  exact_select_expressions:
+    - >
+        //public[count(.|key('IDMatch', @id)) > 1]
+    - >
+        //private[count(.|key('IDMatch', @id)) > 1]
+    - >
+        //object[count(.|key('IDMatch', @id)) > 1]
+
+  scope_note: >
+    The XSLT key lookup is document-scoped, so duplicate IDs are evaluated
+    independently for each XML document.
+
+notes:
+  - >
+    The deterministic validation procedure reproduces the semantic behavior
+    of the original XSL rule.
+
+  - >
+    Candidate discovery and violation confirmation are deterministic for DID;
+    no external exclusion context is required.
+
+  - >
+    The original XSL and current XML filesystem remain the sources of truth.
+
+  - >
+    This rule does not use CustomExclusions or BaseExclusions.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

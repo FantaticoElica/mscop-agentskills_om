@@ -1,0 +1,254 @@
+﻿id: FNOJ
+name: Form Not On Job
+category: Standards
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Report each documentSet form that exists in the ManuScript but is not
+  associated with any printDoc within the same XML document.
+
+source:
+  file: files/source/MsCop/FormNotOnJob.xsl
+  module_id: FNOJ
+  templates:
+    - FormNotOnJob
+    - FNOJ_XML
+    - FNOJ_HTML
+    - FNOJ_Data
+    - FNOJ_AddRow_XML
+    - FNOJ_AddRow_HTML
+
+target:
+  primary_selector: >
+    documents/documentSet
+
+  inspected_selectors:
+    - >
+        documents/documentSet
+    - >
+        @name
+    - >
+        //printDoc[@name=$docSetName]
+
+  element_type: documentSet
+  attribute: name
+  scope: single_xml_document
+
+condition:
+  type: missing_relationship
+  scope: single_xml_document
+
+  comparison:
+    type: exact_string
+    case_sensitive: true
+    whitespace_sensitive: true
+    normalization: none
+
+  rule:
+    - >
+      Consider documentSet elements selected by documents/documentSet.
+    - >
+      Read the @name attribute of each documentSet.
+    - >
+      Use the current documentSet/@name as the form name to search for
+      printDoc elements in the same XML document.
+    - >
+      A matching printDoc exists when a printDoc has an @name value exactly
+      equal to the current documentSet/@name.
+    - >
+      A documentSet is a violation when no printDoc with the exact same
+      @name exists in the same XML document.
+    - >
+      Comparison is case-sensitive and whitespace-sensitive.
+    - >
+      Do not trim, normalize, lowercase, uppercase, or otherwise transform
+      form names.
+    - >
+      documentSet occurrences in different XML documents must never be
+      compared.
+
+exclusions:
+  - >
+    Candidate exclusions are resolved from the current repository exclusion
+    configuration according to the AgentRule execution contract.
+  - >
+    The original XSL excludes documentSet names listed in the FNOJ
+    CustomExclusions configuration.
+  - >
+    Elements other than documentSet are ignored for candidate discovery.
+  - >
+    printDoc relationships in different XML documents are never compared.
+  - >
+    Attributes other than name are ignored for the relationship comparison.
+  - >
+    An element without a name attribute is not part of the name-based
+    relationship evaluation.
+
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic Form Not On Job structural validation against
+    each applicable XML file in the supplied application.
+
+  xpath: >
+    documents/documentSet
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath "documents/documentSet"
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its XPath semantics.
+    - >
+      Treat the command output as the structural candidate set for this
+      rule.
+    - >
+      Evaluate each documentSet candidate against printDoc elements in the
+      same XML document using the exact @name comparison defined by this
+      AgentRule.
+    - >
+      Preserve case-sensitive and whitespace-sensitive comparison semantics.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+    - >
+      Resolve and apply the configured FNOJ exclusions according to the
+      current AgentRule exclusion configuration.
+    - >
+      Do not replace the deterministic validation procedure with an
+      independently implemented XPath, regex, XML parser, LLM inspection,
+      or alternate validator.
+
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      documentSet nodes returned by the validation XPath are structural
+      candidates requiring evaluation of their association with printDoc
+      elements in the same XML document.
+
+    confirmed_violation_requires:
+      - >
+        The matched node is a documentSet element.
+      - >
+        The documentSet has a name attribute.
+      - >
+        No printDoc element in the same XML document has an @name value
+        exactly equal to the current documentSet/@name.
+      - >
+        Comparison is case-sensitive.
+      - >
+        Whitespace is significant.
+      - >
+        No trimming, normalization, or case conversion is applied.
+      - >
+        The candidate is not excluded by the applicable FNOJ exclusion
+        configuration.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The Select-Xml result is a structural candidate set, not by itself
+        a confirmed violation.
+      - >
+        The printDoc relationship must be evaluated for every applicable
+        documentSet candidate.
+      - >
+        Relationship matching is scoped to the current XML document.
+      - >
+        A matching printDoc in another XML file does not satisfy the
+        relationship.
+      - >
+        Candidate exclusions must be evaluated before reporting a confirmed
+        violation.
+      - >
+        Do not introduce additional form, relationship, comparison, or
+        exclusion conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - document_set_name
+    - matching_print_doc_count
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+
+expected:
+  condition: >
+    Every documentSet form must be associated with at least one printDoc
+    with the same name within the same XML document unless excluded by the
+    applicable FNOJ exclusion configuration.
+
+violation:
+  when: >
+    No printDoc in the same XML document has an @name value exactly equal
+    to the current documentSet/@name, the candidate is not excluded by the
+    applicable FNOJ exclusion configuration, and the condition is confirmed
+    against the current application filesystem.
+
+original_logic:
+  exact_select_expression: >
+    documents/documentSet[
+      not(
+        @name =
+        msxsl:node-set($CustomExclusions)/module[@id='FNOJ']/form/@name
+      )
+    ]
+
+  exact_count_expression: >
+    count(//printDoc[@name=$docSetName])
+
+  exact_binding:
+    doc_set_name: '@name'
+
+  scope_note: >
+    The original XSL evaluates each documentSet independently and checks
+    whether a printDoc with the same name exists within the same XML
+    document.
+
+notes:
+  - >
+    The original XSL selects documentSet elements, excludes configured
+    FNOJ CustomExclusions, obtains the documentSet name, and reports the
+    form when no matching printDoc exists.
+
+  - >
+    The deterministic Select-Xml validation identifies the documentSet
+    candidate set first. Each candidate must then be evaluated against
+    the missing-relationship condition before it can become a confirmed
+    violation.
+
+  - >
+    The original XSL's CustomExclusions behavior is retained as part of
+    the rule semantics and must be resolved according to the current
+    exclusion configuration.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

@@ -1,0 +1,366 @@
+﻿id: SF
+name: 'Select Field Problems'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This list will show fields using Select that may have problems such as not assigning a default value if nothing matches, or if the data type of the values doesn't appear to match the overall field data type.
+
+source:
+  file: files/source/MsCop/SelectFields.xsl
+  module_id: SF
+  templates:
+    - SelectFields
+    - SF_XML
+    - SF_HTML
+    - SF_Data
+    - SF_AddRow_XML
+    - SF_AddRow_HTML
+    - SF_AddParam
+
+target:
+  primary_selector: >
+    //*[local-name()='public' or local-name()='private'][count(.//select) > 0]
+  inspected_selectors:
+    - >
+        //*[local-name()='public' or local-name()='private'][count(.//select) > 0]
+    - >
+        @id
+    - >
+        @type
+    - >
+        .//select[not(case)]
+    - >
+        .//select[case and not(otherwise)]
+    - >
+        .//select[local-name(..)!='caption']/case[@value] | .//select[local-name(..)!='caption']/otherwise[@value]
+    - >
+        local-name(../..)
+    - >
+        local-name()
+    - >
+        @value
+    - >
+        msxsl:node-set($Params)/param
+    - >
+        @paramType
+    - >
+        @fieldID
+    - >
+        @comments
+
+condition:
+  type: deterministic_select_field_validation
+  rule: >
+    For every public or private field containing at least one select element,
+    report each Select that has no case statements, each Select that has case
+    statements but no otherwise statement, and each non-caption case/otherwise
+    value whose datatype does not match the containing field datatype according
+    to the exact source XSL checks.
+  checks:
+    no_case:
+      selector: >
+        .//select[not(case)]
+      violation: >
+        A Select contains no case statements.
+      comment: >
+        No case statements.
+    no_otherwise:
+      selector: >
+        .//select[case and not(otherwise)]
+      violation: >
+        A Select contains case statements but no otherwise statement.
+      comment: >
+        No 'If no match' value.
+    datatype_mismatch:
+      selector: >
+        .//select[local-name(..)!='caption']/case[@value] |
+        .//select[local-name(..)!='caption']/otherwise[@value]
+      exclusions:
+        - >
+          Values belonging to a select whose parent element has local-name
+          'caption' are excluded.
+      boolean:
+        condition: >
+          @value is neither '0' nor '1'
+      int:
+        condition: >
+          string(number(@value))='NaN' or contains(number(@value),'.')
+      float:
+        condition: >
+          string(number(@value))='NaN'
+      ignored_types:
+        - date
+        - datetime
+        - time
+        - string
+      unsupported_types: >
+        Field types other than boolean, int, float, date, datetime, time, and
+        string are ignored by the source XSL.
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: SF
+      handling: >
+        Candidate field exclusions are resolved from the current AgentRules
+        exclusion configuration. Legacy CustomExclusions and BaseExclusions
+        from the source XSL are retained only as source traceability.
+    legacy:
+      custom_expression: >
+        not(@id = msxsl:node-set($CustomExclusions)/module[@id='SF']/field/@id)
+      base_expression: >
+        not(@id = msxsl:node-set($BaseExclusions)/module[@id='SF']/field/@id)
+
+validation_procedure:
+  type: powershell_xml_select_field_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the SF XSL candidate selection, missing-case checks, missing-
+    otherwise checks, and exact XPath 1.0 number() datatype checks.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($field in $xml.SelectNodes("//*[local-name()='public' or local-name()='private'][count(.//select) > 0]")) {
+        $fieldID = $field.GetAttribute("id")
+        $fieldDataType = $field.GetAttribute("type")
+
+        foreach ($select in $field.SelectNodes(".//select[not(case)]")) {
+            $paramType = $select.ParentNode.LocalName
+
+            [void]$results.Add(
+                [PSCustomObject]@{
+                    fieldID    = $fieldID
+                    paramType  = $paramType
+                    comments   = "No case statements."
+                }
+            )
+        }
+
+        foreach ($select in $field.SelectNodes(".//select[case and not(otherwise)]")) {
+            $paramType = $select.ParentNode.LocalName
+
+            [void]$results.Add(
+                [PSCustomObject]@{
+                    fieldID    = $fieldID
+                    paramType  = $paramType
+                    comments   = "No 'If no match' value."
+                }
+            )
+        }
+
+        $valueNodes = $field.SelectNodes(
+            ".//select[local-name(..)!='caption']/case[@value] | .//select[local-name(..)!='caption']/otherwise[@value]"
+        )
+
+        $position = 0
+
+        foreach ($node in $valueNodes) {
+            $position++
+
+            $value = $node.GetAttribute("value")
+            $navigator = $node.CreateNavigator()
+            $numberString = [string]$navigator.Evaluate("string(number(@value))")
+            $isNaN = $numberString -eq "NaN"
+            $containsDot = $numberString.Contains(".")
+            $mismatch = $false
+
+            switch ($fieldDataType) {
+                "boolean" {
+                    if ($value -ne "0" -and $value -ne "1") {
+                        $mismatch = $true
+                    }
+                }
+
+                "int" {
+                    if ($isNaN -or $containsDot) {
+                        $mismatch = $true
+                    }
+                }
+
+                "float" {
+                    if ($isNaN) {
+                        $mismatch = $true
+                    }
+                }
+
+                "date" {
+                    $mismatch = $false
+                }
+
+                "datetime" {
+                    $mismatch = $false
+                }
+
+                "time" {
+                    $mismatch = $false
+                }
+
+                "string" {
+                    $mismatch = $false
+                }
+
+                default {
+                    $mismatch = $false
+                }
+            }
+
+            if ($mismatch) {
+                $paramType = $node.ParentNode.ParentNode.LocalName
+
+                $casePosition = "1"
+                if ($node.LocalName -eq "case") {
+                    $casePosition = [string]$position
+                }
+
+                $comments =
+                    $node.LocalName +
+                    " value of: " +
+                    $value +
+                    " does not match the field data type of: " +
+                    $fieldDataType +
+                    " (" +
+                    $node.LocalName +
+                    ": " +
+                    $casePosition +
+                    ")"
+
+                [void]$results.Add(
+                    [PSCustomObject]@{
+                        fieldID   = $fieldID
+                        paramType = $paramType
+                        comments  = $comments
+                    }
+                )
+            }
+        }
+    }
+
+    $results |
+        Sort-Object paramType, fieldID |
+        ForEach-Object {
+            $_
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its
+      semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport,
+      quoting, escaping, and result collection required to execute the
+      command_template safely.
+    - >
+      The XPath 1.0 number(@value) semantics must be preserved for int and
+      float checks; do not replace them with locale-dependent PowerShell numeric
+      parsing.
+    - >
+      Caption Select values must be excluded from datatype validation exactly
+      as in the source selector.
+    - >
+      No-case and no-otherwise checks must remain independent, so a Select can
+      generate results from both applicable checks.
+    - >
+      Date, datetime, time, and string fields must not generate datatype
+      mismatch results.
+    - >
+      Unsupported field datatypes must not generate datatype mismatch results.
+    - >
+      A transport or invocation failure must be retried through permitted
+      runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - fieldID
+    - paramType
+    - comments
+  multiplicity: >
+    One result for every source-XSL SF_AddParam event.
+  sorting:
+    - paramType
+    - fieldID
+  result_gate: >
+    Report only no-case, no-otherwise, or datatype-mismatch conditions defined
+    by the source XSL.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - fieldID
+    - paramType
+    - comments
+
+expected:
+  pass: >
+    Every Select has case statements and an otherwise value, and all applicable
+    case/otherwise values match the field datatype according to the source
+    checks.
+  violation: >
+    A Select has no cases, has cases without an otherwise value, or contains a
+    non-caption case/otherwise value that fails the field datatype check.
+
+violation:
+  title: 'Select Field Problem'
+  message: >
+    Field '{fieldID}' has a Select problem in '{paramType}': {comments}.
+  severity: Standards
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //*[local-name()='public' or local-name()='private'][
+          count(.//select) > 0
+        ]
+    - >
+        .//select[not(case)]
+    - >
+        .//select[case and not(otherwise)]
+    - >
+        .//select[local-name(..)!='caption']/case[@value] |
+        .//select[local-name(..)!='caption']/otherwise[@value]
+    - >
+        string(number(@value))='NaN' or contains(number(@value),'.')
+    - >
+        @id
+    - >
+        @type
+    - >
+        local-name(..)
+    - >
+        local-name(../..)
+    - >
+        local-name()
+    - >
+        @value
+    - >
+        msxsl:node-set($Params)/param
+    - >
+        @paramType
+    - >
+        @fieldID
+    - >
+        @comments
+
+notes:
+  - >
+    The source XSL checks Boolean values strictly against 0 and 1.
+  - >
+    The source XSL uses XPath number() semantics for int and float validation.
+  - >
+    Integer values containing a decimal point after XPath number() conversion
+    are treated as mismatches.
+  - >
+    Caption Select values are intentionally excluded from datatype validation.
+  - >
+    Parameters are sorted by paramType and then fieldID before output.
+  - >
+    The source XSL emits fieldID, paramType, and comments for each detected
+    problem.

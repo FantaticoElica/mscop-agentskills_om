@@ -1,0 +1,501 @@
+﻿```yaml
+id: HCP
+name: 'Hard-coded Paths'
+category: Standards
+status: READY
+validation: VALIDATED
+generated: false
+
+description: >
+  Detect hard-coded file paths or URLs in Value or Default elements of public
+  and private fields. The rule identifies values matching the exact URL and
+  Windows file-path regular expressions used by the original HCP XSL rule.
+
+source:
+  file: files/source/MsCop/HardCodedPaths.xsl
+  module_id: HCP
+  module_description: Hard-coded Paths
+  module_type: Standards
+  templates:
+    rule_entry: HardCodedPaths
+    detection: HCP_Data
+    xml_report: HCP_XML
+    html_report: HCP_HTML
+    xml_row: HCP_AddRow_XML
+    html_row: HCP_AddRow_HTML
+
+target:
+  element_types:
+    - public
+    - private
+
+  primary_selector: >
+    //*[local-name()='public' or local-name()='private']
+
+  field_identifier:
+    attribute: id
+
+  inspected_locations:
+    - path: value/@value
+      reported_value: value/@value
+
+    - path: value/if/then/@value
+      reported_value: value/if/then/@value
+
+    - path: value/if/else/@value
+      reported_value: value/if/else/@value
+
+    - path: rules/value/@value
+      reported_value: rules/value/@value
+
+    - path: rules/value/if/then/@value
+      reported_value: rules/value/if/then/@value
+
+    - path: rules/value/if/else/@value
+      reported_value: rules/value/if/else/@value
+
+    - path: rules/default/@value
+      reported_value: rules/default/@value
+
+    - path: rules/default/if/then/@value
+      reported_value: rules/default/if/then/@value
+
+    - path: rules/default/if/else/@value
+      reported_value: rules/default/if/else/@value
+
+patterns:
+  - name: URLPattern
+    type: regex
+    expression: '((mailto\:|(news|(ht|f)tp(s?))\://){1}\S+)'
+    description: >
+      Exact source regular expression used by the original HCP rule to detect
+      mailto, news, HTTP, HTTPS, FTP, and FTPS-style URL values.
+
+  - name: FilePathPattern
+    type: regex
+    expression: '^(([a-zA-Z]:)|(\\{2}\w+)\$?)(\\(\w[\w ]*.*))+$'
+    description: >
+      Exact source regular expression used by the original HCP rule to detect
+      Windows drive-letter paths and UNC-style paths.
+
+condition:
+  type: regex_match
+
+  rule:
+    - >
+      Consider only public and private elements.
+
+    - >
+      Inspect each of the nine explicitly defined value locations
+      independently.
+
+    - >
+      A value is a match when it satisfies URLPattern OR FilePathPattern.
+
+    - >
+      A matching value is reported as a hard-coded path/URL occurrence.
+
+    - >
+      Do not require both patterns to match.
+
+    - >
+      Do not trim, normalize, lowercase, uppercase, decode, or otherwise
+      transform the value before pattern evaluation.
+
+  matching:
+    operator: OR
+    patterns:
+      - URLPattern
+      - FilePathPattern
+
+  locations:
+    - value/@value
+    - value/if/then/@value
+    - value/if/else/@value
+    - rules/value/@value
+    - rules/value/if/then/@value
+    - rules/value/if/else/@value
+    - rules/default/@value
+    - rules/default/if/then/@value
+    - rules/default/if/else/@value
+
+exclusions:
+  - >
+    Candidate-level exclusions are evaluated only through the current
+    repository-wide exclusion configuration:
+    AgentRules/Exclusions.yaml.
+
+  - >
+    The current HCP candidate-level exclusion configuration contains no
+    configured exclusions unless an entry is explicitly present for HCP
+    in AgentRules/Exclusions.yaml.
+
+  - >
+    CustomExclusions and BaseExclusions from the original MSCop XSL are
+    historical/original rule semantics and are not current runtime
+    exclusion sources for this AgentRule.
+
+  - >
+    Do not search for, reconstruct, or apply CustomExclusions or
+    BaseExclusions as a separate runtime exclusion mechanism.
+
+validation_procedure:
+
+  type: powershell_xml_regex_scan
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Deterministically inspect the current XML file and identify every value
+    occurrence matching the HCP URLPattern or FilePathPattern within the
+    defined public and private element locations.
+
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $URLPattern = '((mailto\:|(news|(ht|f)tp(s?))\://){1}\S+)'
+    $FilePathPattern = '^(([a-zA-Z]:)|(\\{2}\w+)\$?)(\\(\w[\w ]*.*))+$'
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    $nodes = $xml.SelectNodes("//*[local-name()='public' or local-name()='private']")
+
+    foreach ($node in $nodes) {
+
+        $fieldName = $node.GetAttribute("id")
+
+        $locations = @(
+            @{
+                Name = "value/@value"
+                NodePath = "./value"
+            },
+            @{
+                Name = "value/if/then/@value"
+                NodePath = "./value/if/then"
+            },
+            @{
+                Name = "value/if/else/@value"
+                NodePath = "./value/if/else"
+            },
+            @{
+                Name = "rules/value/@value"
+                NodePath = "./rules/value"
+            },
+            @{
+                Name = "rules/value/if/then/@value"
+                NodePath = "./rules/value/if/then"
+            },
+            @{
+                Name = "rules/value/if/else/@value"
+                NodePath = "./rules/value/if/else"
+            },
+            @{
+                Name = "rules/default/@value"
+                NodePath = "./rules/default"
+            },
+            @{
+                Name = "rules/default/if/then/@value"
+                NodePath = "./rules/default/if/then"
+            },
+            @{
+                Name = "rules/default/if/else/@value"
+                NodePath = "./rules/default/if/else"
+            }
+        )
+
+        foreach ($location in $locations) {
+
+            $valueNode = $node.SelectSingleNode($location.NodePath)
+
+            if ($null -eq $valueNode) {
+                continue
+            }
+
+            if (-not $valueNode.HasAttribute("value")) {
+                continue
+            }
+
+            $value = $valueNode.GetAttribute("value")
+
+            $urlMatch = [System.Text.RegularExpressions.Regex]::IsMatch(
+                $value,
+                $URLPattern
+            )
+
+            $filePathMatch = [System.Text.RegularExpressions.Regex]::IsMatch(
+                $value,
+                $FilePathPattern
+            )
+
+            if ($urlMatch -or $filePathMatch) {
+
+                $matchedPatterns = [System.Collections.Generic.List[string]]::new()
+
+                if ($urlMatch) {
+                    $matchedPatterns.Add("URLPattern")
+                }
+
+                if ($filePathMatch) {
+                    $matchedPatterns.Add("FilePathPattern")
+                }
+
+                $results.Add(
+                    [PSCustomObject]@{
+                        FieldName      = $fieldName
+                        ElementType    = $node.LocalName
+                        Location       = $location.Name
+                        Value          = $value
+                        MatchedPattern = ($matchedPatterns -join ",")
+                    }
+                )
+            }
+        }
+    }
+
+    $results
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+
+    - >
+      Execute the command separately for each applicable XML file.
+
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+
+    - >
+      Do not modify the command_template, regex expressions, inspected
+      locations, or XPath semantics.
+
+    - >
+      Treat the command output as the candidate set for this rule.
+
+  result:
+    type: structured_items
+    matched_items_are: candidates
+
+  interpretation:
+    matched_items: >
+      Each returned item represents one value occurrence that matched
+      URLPattern or FilePathPattern at one of the nine inspected locations.
+
+    confirmed_violation_requires:
+      - >
+        The containing element is public or private.
+
+      - >
+        The value occurs at one of the nine defined inspected locations.
+
+      - >
+        The exact value matches URLPattern or FilePathPattern.
+
+      - >
+        Any applicable candidate-level exclusions defined in
+        AgentRules/Exclusions.yaml have been evaluated.
+
+      - >
+        The candidate is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+
+      - >
+        The evidence is verified against the current XML filesystem.
+
+  important:
+    - >
+      The deterministic command identifies the candidate set. It does not
+      replace the complete current AgentRule execution flow.
+
+    - >
+      After candidate generation, evaluate each candidate against
+      AgentRules/Exclusions.yaml.
+
+    - >
+      CustomExclusions and BaseExclusions are retained only for original
+      MSCop traceability and are not current runtime exclusion sources.
+
+    - >
+      Do not search for, reconstruct, or apply CustomExclusions or
+      BaseExclusions during current execution.
+
+    - >
+      FileFolderExclusions.yaml is handled during normal filesystem
+      traversal according to the ApplicationCompliance Skill.
+
+    - >
+      Do not use the validation procedure as a substitute for candidate-level
+      exclusion evaluation or evidence verification.
+
+evidence:
+  required:
+    - file
+    - element_type
+    - fieldName
+    - location
+    - value
+    - matched_pattern
+    - exclusion_status
+
+  report:
+    candidate_identifier: fieldName
+    include_field_name: true
+    include_value: false
+    include_location: false
+    include_matched_pattern: false
+    include_exclusion_status: false
+
+expected:
+  condition: >
+    No public or private field contains a value matching URLPattern or
+    FilePathPattern at any of the nine inspected locations.
+
+violation:
+  when: >
+    A value at one of the nine inspected locations matches URLPattern or
+    FilePathPattern and the resulting candidate is not excluded by an
+    applicable entry in AgentRules/Exclusions.yaml.
+
+original_logic:
+  regex_variables:
+    URLPattern: '((mailto\:|(news|(ht|f)tp(s?))\://){1}\S+)'
+    FilePathPattern: '^(([a-zA-Z]:)|(\\{2}\w+)\$?)(\\(\w[\w ]*.*))+$'
+
+  candidate_field_selector: >
+    //*[(local-name()='public' or local-name()='private')]
+
+  candidate_item_selector: >
+    msxsl:node-set($Content)/item[
+      not(@fieldName =
+        msxsl:node-set($CustomExclusions)/module[@id='HCP']/field/@id)
+      and
+      not(@fieldName =
+        msxsl:node-set($BaseExclusions)/module[@id='HCP']/field/@id)
+    ]
+
+  content_selectors:
+    - >
+      value[custom:RegExMatch(@value,$URLPattern) or
+      custom:RegExMatch(@value,$FilePathPattern)]
+
+    - >
+      value[custom:RegExMatch(if/then/@value,$URLPattern) or
+      custom:RegExMatch(if/then/@value,$FilePathPattern)]
+
+    - >
+      value[custom:RegExMatch(if/else/@value,$URLPattern) or
+      custom:RegExMatch(if/else/@value,$FilePathPattern)]
+
+    - >
+      rules[custom:RegExMatch(value/@value,$URLPattern) or
+      custom:RegExMatch(value/@value,$FilePathPattern)]
+
+    - >
+      rules[custom:RegExMatch(value/if/then/@value,$URLPattern) or
+      custom:RegExMatch(value/if/then/@value,$FilePathPattern)]
+
+    - >
+      rules[custom:RegExMatch(value/if/else/@value,$URLPattern) or
+      custom:RegExMatch(value/if/else/@value,$FilePathPattern)]
+
+    - >
+      rules[custom:RegExMatch(default/@value,$URLPattern) or
+      custom:RegExMatch(default/@value,$FilePathPattern)]
+
+    - >
+      rules[custom:RegExMatch(default/if/then/@value,$URLPattern) or
+      custom:RegExMatch(default/if/then/@value,$FilePathPattern)]
+
+    - >
+      rules[custom:RegExMatch(default/if/else/@value,$URLPattern) or
+      custom:RegExMatch(default/if/else/@value,$FilePathPattern)]
+
+  selection_context:
+    - >
+      The source iterates candidate public/private fields sorted by @id.
+
+    - >
+      The final Content items are sorted by @fieldName.
+
+  predicate_logic:
+    all:
+      - >
+        local-name() = 'public' or local-name() = 'private'
+
+      - >
+        URLPattern match or FilePathPattern match at one of the nine
+        inspected locations
+
+  sorting:
+    content_fields: "@id"
+    reported_items: "@fieldName"
+
+  exclusions:
+    - type: CustomExclusions
+      module: HCP
+      excluded_element: field
+      match_attribute: id
+      candidate_attribute: fieldName
+      status: DEFERRED
+      semantics: >
+        The original XSL excludes collected items when fieldName equals an
+        excluded field/@id in the HCP CustomExclusions context. This is
+        preserved as source traceability only and is not evaluated by the
+        current validation procedure.
+
+    - type: BaseExclusions
+      module: HCP
+      excluded_element: field
+      match_attribute: id
+      candidate_attribute: fieldName
+      status: DEFERRED
+      semantics: >
+        The original XSL excludes collected items when fieldName equals an
+        excluded field/@id in the HCP BaseExclusions context. This is
+        preserved as source traceability only and is not evaluated by the
+        current validation procedure.
+
+notes:
+  - >
+    The original XSL detection semantics are preserved: only public and
+    private elements are inspected, all nine defined locations are evaluated,
+    and URLPattern OR FilePathPattern determines a match.
+
+  - >
+    The deterministic validation procedure reproduces the detection portion
+    of the HCP rule using the exact regex expressions represented in this
+    AgentRule.
+
+  - >
+    Candidate-level exclusions are evaluated through
+    AgentRules/Exclusions.yaml after candidate generation.
+
+  - >
+    CustomExclusions and BaseExclusions are retained in original_logic only
+    for traceability to the legacy XSL and are not current runtime exclusion
+    sources.
+
+  - >
+    File/folder exclusions are handled generically by the
+    ApplicationCompliance Skill through AgentRules/FileFolderExclusions.yaml.
+
+  - >
+    Evidence fields such as value, location, and matched_pattern remain
+    available for internal confirmation and verification, but the generic
+    Skill controls the user-facing report and renders only the candidate
+    identifier.
+
+  - >
+    The current XML filesystem and original HCP XSL remain the sources of
+    truth.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.
+```

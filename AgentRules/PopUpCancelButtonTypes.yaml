@@ -1,0 +1,160 @@
+﻿id: CBC
+name: 'Cancel Button Companions'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Cancel buttons may need to have a delete AND custom/cancel command depending on iteration. The cancel buttons on these pages need to be checked and confirmed correct.
+
+source:
+  file: files/source/MsCop/PopUpCancelButtonTypes.xslt
+  module_id: CBC
+  templates:
+    - CancelButtonCompanions
+    - Xml
+    - Html
+
+target:
+  primary_selector: >
+    //topics/topic/page
+  inspected_selectors:
+    - >
+        //topics/topic/page
+    - >
+        .//action[@caption = 'Cancel']
+    - >
+        ../@name
+    - >
+        @name
+    - >
+        ../../../properties/@manuscriptID
+  result_scope: >
+    Pages containing at least one Cancel action but not exactly two Cancel actions.
+
+condition:
+  type: deterministic_page_validation
+  rule: >
+    For every topics/topic/page, count descendant action elements whose caption
+    attribute is exactly 'Cancel'. A page is reported when the count is greater
+    than zero and not equal to two.
+  predicate: >
+    $CancelButtonsCount != 2 and $CancelButtonsCount > 0
+  interpretation:
+    pass: >
+      The page has either zero or exactly two Cancel actions and is not reported.
+    violation: >
+      The page has one or more Cancel actions but does not have exactly two.
+  exclusions:
+    source_defined: false
+    handling: >
+      The source XSL contains no CustomExclusions or BaseExclusions logic.
+      No static exclusions are inferred.
+
+validation_procedure:
+  type: powershell_xml_cancel_button_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the exact CBC XSL page selection and report pageSet, pageName,
+    and ManuscriptId for every page with an invalid Cancel-button count.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $xml.SelectNodes("//topics/topic/page") |
+        ForEach-Object {
+            $cancelButtonsCount = $_.SelectNodes(".//action[@caption = 'Cancel']").Count
+
+            if ($cancelButtonsCount -ne 2 -and $cancelButtonsCount -gt 0) {
+                [PSCustomObject]@{
+                    pageSet      = $_.ParentNode.GetAttribute("name")
+                    pageName     = $_.GetAttribute("name")
+                    ManuscriptId = $_.ParentNode.ParentNode.ParentNode.SelectSingleNode("properties/@manuscriptID").Value
+                    cancelCount  = $cancelButtonsCount
+                }
+            }
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its
+      semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport,
+      quoting, escaping, and result collection required to execute the
+      command_template safely.
+    - >
+      The Cancel caption comparison must remain an exact case-sensitive
+      comparison to 'Cancel'.
+    - >
+      Pages with zero Cancel actions must not be reported.
+    - >
+      Pages with exactly two Cancel actions must not be reported.
+    - >
+      A transport or invocation failure must be retried through permitted
+      runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - pageSet
+    - pageName
+    - ManuscriptId
+    - cancelCount
+  multiplicity: >
+    One result per page satisfying the source XSL violation predicate.
+  result_gate: >
+    Report only pages where the descendant Cancel action count is greater than
+    zero and not equal to two.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - pageSet
+    - pageName
+    - ManuscriptId
+    - cancelCount
+
+expected:
+  pass: >
+    Every page either has no Cancel actions or exactly two Cancel actions.
+  violation: >
+    A page contains one or more Cancel actions but does not contain exactly two.
+
+violation:
+  title: 'Invalid Cancel Button Companions'
+  message: >
+    Page '{pageName}' in PageSet '{pageSet}' has {cancelCount} Cancel action(s);
+    expected exactly 2 when Cancel actions are present.
+  severity: Standards
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //topics/topic/page
+    - >
+        count(.//action[@caption = 'Cancel'])
+    - >
+        $CancelButtonsCount != 2 and $CancelButtonsCount > 0
+    - >
+        ../@name
+    - >
+        @name
+    - >
+        ../../../properties/@manuscriptID
+
+notes:
+  - >
+    The source XSL reports only pages with at least one Cancel action and a
+    Cancel count other than two.
+  - >
+    The source XSL does not report pages with zero Cancel actions.
+  - >
+    The source XSL contains no explicit CustomExclusions or BaseExclusions.
+  - >
+    XML and HTML templates implement the same selection predicate and output
+    page-level results.

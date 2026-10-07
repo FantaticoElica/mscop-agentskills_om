@@ -1,0 +1,317 @@
+﻿id: MIR
+name: 'Missing Iterator Reference'
+category: 'Error'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  When a field being referenced exists inside an iterative group, an Iterator field must be used instead of a direct reference. If server doesn't know which iteration to use, it will always try to use the first one. This could cause context problems that are very difficult to track down. This list shows fields where the referenced field exists inside an iterative group.
+
+source:
+  file: files/source/MsCop/MissingIteratorReference.xsl
+  module_id: MIR
+  templates:
+    - MissingIteratorReference
+    - MIR_XML
+    - MIR_HTML
+    - MIR_Data
+    - MIR_AddRow_XML
+    - MIR_AddRow_HTML
+
+target:
+  primary_selector: >
+    model//public[.//@idref and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MIR']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MIR']/field/@id)] |
+    model//private[.//@idref and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MIR']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MIR']/field/@id)]
+  inspected_selectors:
+    - >
+        model//public[.//@idref and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MIR']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MIR']/field/@id)] |
+        model//private[.//@idref and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MIR']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MIR']/field/@id)]
+    - >
+        .//@idref[not(ancestor::iterator) and not(ancestor::accumulator) and count(. | key('UniqueIdref',.)[1]) = 1]
+    - >
+        substring-before(.,'.')
+    - >
+        .
+    - >
+        ancestor::object[key('IterativeGroup',@id)][1]/@id
+    - >
+        //*[@id=$refGroup]
+    - >
+        ancestor-or-self::object[key('IterativeGroup',@id)][1]/@id
+    - >
+        //*[@id=$parentIterGroup and relationships/relationship/relatedObject/@idref=$refIterGroup]
+    - >
+        not(ancestor::object[@id=$refIterGroup])
+    - >
+        $refIterGroup!=''
+    - >
+        $relatedGroups=''
+
+condition:
+  type: deterministic_cross_reference
+  rule: >
+    A public/private field is a candidate when it contains an idref attribute anywhere below it. Each idref is considered only when it is not inside an iterator or accumulator and is the first occurrence of that exact idref value in the XML document. The referenced group is the substring before '.' when present, otherwise the complete idref. The reference is a violation when the referenced group is itself iterative or has an iterative ancestor, the original field is not already inside that referenced iterative group, and the original iterative group is not related to the referenced iterative group through relationships/relationship/relatedObject/@idref.
+  iterative_group_definition: >
+    An object is iterative when minOccurs/@value='0', or maxOccurs/@value > 1, or maxOccurs/@value='*', or minOccurs/@idref exists, or maxOccurs/@idref exists.
+  uniqueness_definition: >
+    Only the first occurrence of each exact idref value in the XML document is evaluated, matching the XSL key UniqueIdref behavior.
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: MIR
+      handling: >
+        Apply configured MIR field exclusions during candidate evaluation. The current AgentRules exclusion configuration is authoritative at runtime.
+    legacy:
+      - CustomExclusions/module[@id='MIR']/field/@id
+      - BaseExclusions/module[@id='MIR']/field/@id
+      handling: >
+        Preserve these expressions as source traceability; do not require the legacy files to execute the rule.
+
+validation_procedure:
+  type: powershell_xml_cross_reference
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the MIR XSL semantics deterministically for each XML file by identifying unique direct idref references, resolving their referenced group and iterative-group ancestry, checking the original field's iterative-group ancestry, and checking relationship-based links between the original and referenced iterative groups.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $iterativeGroups = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+
+    foreach ($object in $xml.SelectNodes("//object")) {
+        $isIterative = $false
+
+        $minValue = $object.SelectSingleNode("minOccurs/@value")
+        if ($minValue -and $minValue.Value -eq "0") {
+            $isIterative = $true
+        }
+
+        $maxValue = $object.SelectSingleNode("maxOccurs/@value")
+        if ($maxValue) {
+            $maxText = $maxValue.Value
+            if ($maxText -eq "*") {
+                $isIterative = $true
+            }
+            elseif ($maxText -as [double]) {
+                if ([double]$maxText -gt 1) {
+                    $isIterative = $true
+                }
+            }
+        }
+
+        if ($object.SelectSingleNode("minOccurs/@idref")) {
+            $isIterative = $true
+        }
+
+        if ($object.SelectSingleNode("maxOccurs/@idref")) {
+            $isIterative = $true
+        }
+
+        if ($isIterative -and $object.GetAttribute("id")) {
+            [void]$iterativeGroups.Add($object.GetAttribute("id"))
+        }
+    }
+
+    $idrefNodes = @(
+        $xml.SelectNodes("//public//@idref | //private//@idref") |
+        Where-Object {
+            -not $_.SelectSingleNode("ancestor::iterator") -and
+            -not $_.SelectSingleNode("ancestor::accumulator")
+        }
+    )
+
+    $seenIdrefs = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+
+    foreach ($idrefNode in $idrefNodes) {
+        $idref = $idrefNode.Value
+
+        if (-not $seenIdrefs.Add($idref)) {
+            continue
+        }
+
+        $refGroup = if ($idref.Contains(".")) {
+            $idref.Substring(0, $idref.IndexOf("."))
+        }
+        else {
+            $idref
+        }
+
+        $refNode = $xml.SelectSingleNode("//*[@id=$refGroup]")
+        if (-not $refNode) {
+            continue
+        }
+
+        $refIterGroup = ""
+        $refObject = if ($refNode.LocalName -eq "object") {
+            $refNode
+        }
+        else {
+            $refNode.SelectSingleNode("ancestor-or-self::object[object][1]")
+        }
+
+        $ancestorObjects = @($refNode.SelectNodes("ancestor::object")) + @(
+            if ($refNode.LocalName -eq "object") { $refNode }
+        )
+
+        foreach ($object in $ancestorObjects) {
+            $objectId = $object.GetAttribute("id")
+            if ($objectId -and $iterativeGroups.Contains($objectId)) {
+                $refIterGroup = $objectId
+                break
+            }
+        }
+
+        if (-not $refIterGroup) {
+            continue
+        }
+
+        $sourceField = $idrefNode.SelectSingleNode("ancestor::*[self::public or self::private][1]")
+        if (-not $sourceField) {
+            continue
+        }
+
+        $fieldID = $sourceField.GetAttribute("id")
+        $parentGroup = ""
+        $parentObject = $sourceField.SelectSingleNode("parent::*")
+        if ($parentObject) {
+            $parentGroup = $parentObject.GetAttribute("id")
+        }
+
+        $parentIterGroup = ""
+        foreach ($object in $sourceField.SelectNodes("ancestor::object")) {
+            $objectId = $object.GetAttribute("id")
+            if ($objectId -and $iterativeGroups.Contains($objectId)) {
+                $parentIterGroup = $objectId
+                break
+            }
+        }
+
+        if ($parentIterGroup -eq $refIterGroup) {
+            continue
+        }
+
+        $relatedGroups = $false
+
+        if ($parentIterGroup) {
+            $parentIterObject = $xml.SelectSingleNode("//*[@id=$parentIterGroup]")
+            if ($parentIterObject) {
+                foreach ($relatedObject in $parentIterObject.SelectNodes("relationships/relationship/relatedObject/@idref")) {
+                    if ($relatedObject.Value -eq $refIterGroup) {
+                        $relatedGroups = $true
+                        break
+                    }
+                }
+            }
+        }
+
+        if ($relatedGroups) {
+            continue
+        }
+
+        [PSCustomObject]@{
+            fieldID        = $fieldID
+            parentGroup    = $parentGroup
+            parentIterGroup = if ($parentIterGroup) { $parentIterGroup } else { "n/a" }
+            refField       = $idref
+            refGroup       = $refGroup
+            refIterGroup   = $refIterGroup
+        }
+    }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport, quoting, escaping, and result collection required to execute the command_template safely.
+    - >
+      Candidate exclusions from AgentRules/Exclusions.yaml must be applied according to the active MIR exclusion configuration.
+    - >
+      Do not substitute an unrelated XPath-only validator because MIR depends on cross-reference resolution, iterative-group ancestry, unique-idref semantics, and relationship checks.
+    - >
+      Do not treat missing referenced groups as MIR violations; the source XSL requires a non-empty refIterGroup.
+    - >
+      Preserve ordinal string semantics for idref, group IDs, and relationship IDs.
+    - >
+      A transport or invocation failure must be retried through permitted runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - fieldID
+    - parentGroup
+    - parentIterGroup
+    - refField
+    - refGroup
+    - refIterGroup
+  multiplicity: >
+    At most one result is produced for each unique idref value that satisfies the MIR violation predicate, matching the XSL's UniqueIdref key and first-occurrence behavior.
+  sort:
+    - fieldID
+  result_gate: >
+    Emit a violation only when refIterGroup is non-empty, the source field is not inside the referenced iterative group, and no relationship from the source iterative group points to the referenced iterative group.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - fieldID
+    - parentGroup
+    - parentIterGroup
+    - refField
+    - refGroup
+    - refIterGroup
+
+expected:
+  pass: >
+    No direct idref reference resolves to a field/group inside an unrelated iterative group under the MIR predicate.
+  violation: >
+    A unique direct idref resolves to a referenced field/group whose first iterative-group ancestor is not the source field's iterative-group ancestor and is not related to that source iterative group.
+
+violation:
+  title: 'Missing Iterator Reference'
+  message: >
+    Field '{fieldID}' directly references '{refField}', whose referenced group '{refGroup}' is inside iterative group '{refIterGroup}'. The source field is not within that iterative group and no relationship links the source iterative group to the referenced iterative group.
+  severity: Error
+
+original_logic:
+  exact_select_expressions:
+    - >
+        model//public[.//@idref and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MIR']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MIR']/field/@id)] |
+        model//private[.//@idref and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MIR']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MIR']/field/@id)]
+    - >
+        .//@idref[not(ancestor::iterator) and not(ancestor::accumulator) and count(. | key('UniqueIdref',.)[1]) = 1]
+    - >
+        substring-before(.,'.')
+    - >
+        .
+    - >
+        ancestor::object[key('IterativeGroup',@id)][1]/@id
+    - >
+        //*[@id=$refGroup]
+    - >
+        ancestor-or-self::object[key('IterativeGroup',@id)][1]/@id
+    - >
+        //*[@id=$parentIterGroup and relationships/relationship/relatedObject/@idref=$refIterGroup]
+    - >
+        not(ancestor::object[@id=$refIterGroup])
+    - >
+        $refIterGroup!=''
+    - >
+        $relatedGroups=''
+
+notes:
+  - >
+    The XSL defines IterativeGroup using minOccurs value 0, maxOccurs greater than 1 or '*', or minOccurs/maxOccurs idref attributes.
+  - >
+    MIR evaluates only the first occurrence of each exact idref value in the XML document.
+  - >
+    References occurring inside iterator or accumulator ancestors are excluded.
+  - >
+    The referenced group's first iterative-group ancestor and the source field's first iterative-group ancestor are compared.
+  - >
+    A relationship from the source iterative group to the referenced iterative group suppresses the violation.
+  - >
+    Legacy CustomExclusions and BaseExclusions are retained for source traceability; AgentRules/Exclusions.yaml is authoritative for current runtime exclusions.

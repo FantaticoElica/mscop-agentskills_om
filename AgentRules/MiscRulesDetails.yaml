@@ -1,0 +1,189 @@
+﻿id: MRD
+name: 'Incomplete Misc Rule Information'
+category: 'Error'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This list shows fields that have Miscellaneous Rules selected, but no rules
+  have been defined. These field will generate a crash if they are evaluated.
+
+source:
+  file: files/source/MsCop/MiscRulesDetails.xsl
+  module_id: MRD
+  templates:
+    - MiscRulesDetails
+    - MRD_XML
+    - MRD_HTML
+    - MRD_Data
+    - MRD_AddRow_XML
+    - MRD_AddRow_HTML
+
+target:
+  primary_selector: >
+    model/object[@id='data']//public[rules/misc and not(rules/misc/if)]
+    |
+    model/object[@id='data']//private[misc and not(misc/if)]
+  inspected_selectors:
+    - >
+      model/object[@id='data']//public[rules/misc and not(rules/misc/if)]
+    - >
+      model/object[@id='data']//private[misc and not(misc/if)]
+    - >
+      @id
+    - >
+      rules/misc
+    - >
+      rules/misc/if
+    - >
+      misc
+    - >
+      misc/if
+  scope: per_xml_file
+
+condition:
+  type: missing_child
+  rule:
+    - >
+      A public field under model/object[@id='data'] is a candidate when it has
+      a rules/misc element but does not have a rules/misc/if child.
+    - >
+      A private field under model/object[@id='data'] is a candidate when it has
+      a misc element but does not have a misc/if child.
+  matching:
+    public:
+      required_path: rules/misc
+      forbidden_child: rules/misc/if
+    private:
+      required_path: misc
+      forbidden_child: misc/if
+  comparison:
+    type: element_presence
+    normalization: none
+  scope: per_xml_file
+
+exclusions:
+  - >
+    Candidate-level field exclusions are resolved from the current
+    AgentRules/Exclusions.yaml configuration for module MRD.
+  - >
+    The original XSL applies CustomExclusions and BaseExclusions to the field
+    @id for both Public and Private candidates.
+
+validation_procedure:
+  type: powershell_xml_misc_rule_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    per_file: true
+  purpose: >
+    Parse each applicable XML file and deterministically identify Public fields
+    with rules/misc but without rules/misc/if, and Private fields with misc but
+    without misc/if, matching the source XSL selection logic.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = @(
+        $xml.SelectNodes("model/object[@id='data']//public[rules/misc and not(rules/misc/if)]") |
+            ForEach-Object {
+                [PSCustomObject]@{
+                    FieldID   = $_.GetAttribute("id")
+                    FieldScope = "Public"
+                }
+            }
+
+        $xml.SelectNodes("model/object[@id='data']//private[misc and not(misc/if)]") |
+            ForEach-Object {
+                [PSCustomObject]@{
+                    FieldID   = $_.GetAttribute("id")
+                    FieldScope = "Private"
+                }
+            }
+    )
+
+    $results |
+        Sort-Object FieldID |
+        Select-Object FieldID, FieldScope
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of MRD validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Candidate exclusions must be applied according to the current
+      AgentRules/Exclusions.yaml configuration.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Do not infer violations from filenames, folder names, or non-XML metadata.
+  result:
+    candidate_fields:
+      - FieldID
+      - FieldScope
+  interpretation:
+    violation_when: >
+      A returned Public or Private field remains after the configured MRD field
+      exclusions are applied.
+    no_violation_when: >
+      No applicable field remains after configured exclusions.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an MRD violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the deterministic command_template
+      returns the corresponding field under the exact source paths.
+    - >
+      Excluded candidates are not reported as confirmed violations.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - field_id
+    - field_scope
+
+expected:
+  public:
+    condition: >
+      If rules/misc is present, rules/misc/if should also be defined.
+  private:
+    condition: >
+      If misc is present, misc/if should also be defined.
+
+violation:
+  message: >
+    Field has Miscellaneous Rules selected but no rules have been defined.
+  public:
+    condition: 'rules/misc exists and rules/misc/if does not exist'
+  private:
+    condition: 'misc exists and misc/if does not exist'
+
+original_logic:
+  exact_select_expressions:
+    - >
+      model/object[@id='data']//public[rules/misc and not(rules/misc/if) and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MRD']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MRD']/field/@id)]
+    - >
+      model/object[@id='data']//private[misc and not(misc/if) and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MRD']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MRD']/field/@id)]
+  sorting:
+    - '@id'
+  output_fields:
+    - fieldID
+
+notes:
+  - >
+    Public fields use rules/misc and rules/misc/if; Private fields use misc and
+    misc/if exactly as defined by the source XSL.
+  - >
+    Only fields under model/object[@id='data'] are considered.
+  - >
+    The source XSL sorts candidates by @id before generating the report.
+  - >
+    The XML output reports the field @id as fieldID.

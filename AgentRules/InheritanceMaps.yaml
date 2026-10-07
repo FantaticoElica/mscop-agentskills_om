@@ -1,0 +1,160 @@
+﻿id: IM
+name: 'Inheritance Maps'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Report each inheritance-map item defined under properties/inheritance. The
+  source XSL reports the local name of every child element containing an inherit
+  child.
+
+source:
+  file: files/source/MsCop/InheritanceMaps.xsl
+  module_id: IM
+  templates:
+    - InheritanceMaps
+    - IM_XML
+    - IM_Data
+    - IM_AddRow_XML
+    - IM_AddRow_HTML
+
+target:
+  primary_selector: >
+    properties/inheritance/*[inherit]
+  inspected_selectors:
+    - >
+      properties/inheritance/*[inherit]
+    - >
+      name()
+    - >
+      inherit
+  scope: current XML document and current context node
+  reported_identity: name()
+
+condition:
+  type: child_presence
+  rule: >
+    A child element directly under properties/inheritance is a candidate when
+    it contains at least one inherit child element.
+  matching:
+    parent_path: properties/inheritance
+    required_child: inherit
+  comparison:
+    type: element_presence
+    normalization: none
+  scope: per_xml_file
+  content_inspection: >
+    The contents of the inherit element are not inspected. Presence of at least
+    one inherit child is sufficient to select the inheritance-map item.
+
+exclusions:
+  - >
+    No CustomExclusions or BaseExclusions are referenced by this XSL.
+  - >
+    No static candidate exclusions are applied by the rule.
+
+validation_procedure:
+  type: powershell_xml_selector_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    per_file: true
+  purpose: >
+    Parse each applicable XML file and deterministically identify every direct
+    child of properties/inheritance that contains at least one inherit child,
+    matching the exact selector used by the source XSL.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = $xml.SelectNodes("properties/inheritance/*[inherit]") |
+        ForEach-Object {
+            [PSCustomObject]@{
+                ElementName = $_.Name
+                FieldID     = "$($_.Name): has Inheritance Map items defined"
+            }
+        }
+
+    $results |
+        Select-Object ElementName, FieldID
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of IM validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Do not inspect or interpret the content of inherit elements beyond their
+      presence as required by the source selector.
+    - >
+      Do not infer violations from filenames, folder names, or non-XML metadata.
+  result:
+    candidate_fields:
+      - ElementName
+      - FieldID
+  interpretation:
+    violation_when: >
+      The command returns one or more properties/inheritance child elements.
+    no_violation_when: >
+      The command returns no properties/inheritance child elements containing
+      an inherit child.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an IM violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the exact command_template selector
+      returns the corresponding element.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - element_name
+  report:
+    fieldID: 'name() + ": has Inheritance Map items defined"'
+    location: >
+      Exact properties/inheritance child containing at least one inherit child.
+
+expected:
+  condition: >
+    No properties/inheritance child has an inherit child when inheritance maps
+    are disallowed by review policy.
+
+violation:
+  when: >
+    properties/inheritance/*[inherit] is selected.
+  message: >
+    <element name>: has Inheritance Map items defined
+
+original_logic:
+  exact_selector: >
+    properties/inheritance/*[inherit]
+  reported_expression: name()
+  output_field_expression: >
+    name() + ': has Inheritance Map items defined'
+  source_note: >
+    The XSL emits one row per selected child and does not inspect the inherit
+    content further.
+  sorting: >
+    No explicit sorting is performed by the source XSL; source document order
+    is preserved.
+
+notes:
+  - >
+    The source XSL matches direct children of properties/inheritance only.
+  - >
+    An element is selected solely because it contains at least one inherit child.
+  - >
+    The inherit element contents are not inspected.
+  - >
+    The XML output fieldID is generated as "<element name>: has Inheritance Map
+    items defined".

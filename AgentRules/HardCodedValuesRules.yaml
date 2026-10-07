@@ -1,0 +1,489 @@
+﻿id: HCVR
+name: Hard-coded Values Rules
+category: Standards
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Report each exact hard-coded value parameter emitted by the original XSL
+  for a non-excluded private field in the Then and Else Boolean Results of
+  Conditional Value and Misc Rule properties.
+
+source:
+  file: files/source/MsCop/HardCodedValuesRules.xsl
+  module_id: HCVR
+  templates:
+    - HardCodedValuesRules
+    - HCVR_XML
+    - HCVR_HTML
+    - HCVR_Data
+    - HCVR_AddParam_Name
+    - HCVR_AddRow_XML
+    - HCVR_AddRow_HTML
+    - HCVR_AddParam
+
+target:
+  primary_selector: >
+    //private[
+      rules/value//then/@value or
+      rules/value//else/@value or
+      rules/misc//then/@value or
+      rules/misc//else/@value
+    ]
+
+  inspected_selectors:
+    - >
+        //private[
+          rules/value//then/@value or
+          rules/value//else/@value or
+          rules/misc//then/@value or
+          rules/misc//else/@value
+        ]
+    - >
+        @id
+    - >
+        .//if[then/@value or else/@value]
+    - >
+        then/@value
+    - >
+        else/@value
+    - >
+        msxsl:node-set($Content)/param
+    - >
+        @paramValue
+    - >
+        @paramName
+    - >
+        @fieldID
+
+  element: private
+  scope: single_xml_document
+  field_identifier: '@id'
+
+condition:
+  type: emitted_parameter
+  scope: single_xml_document
+
+  comparison:
+    parameter_presence: XML attribute node existence
+    value: exact source @value string
+    field_identity: exact @id string
+    case_sensitive: true
+    whitespace_sensitive: true
+    normalization: none
+
+  candidate:
+    rule:
+      - >
+        Consider private fields that contain Then or Else Boolean Result
+        values under Conditional Value or Misc Rule properties.
+      - >
+        Inspect then/@value and else/@value attributes under rules/value
+        and rules/misc structures.
+      - >
+        A parameter is emitted when the corresponding @value attribute exists.
+      - >
+        An existing empty @value attribute is still an emitted parameter.
+      - >
+        Parameter values are the exact source @value strings.
+      - >
+        One candidate is produced for each emitted Then or Else parameter.
+      - >
+        Candidate field identity is the exact private/@id string.
+
+  parameters:
+    - name: Conditional Value Then
+      source: rules/value//then/@value
+    - name: Conditional Value Else
+      source: rules/value//else/@value
+    - name: Misc Rule Then
+      source: rules/misc//then/@value
+    - name: Misc Rule Else
+      source: rules/misc//else/@value
+
+  violation: >
+    Emit one finding for each applicable Then or Else @value parameter whose
+    @value attribute exists and whose private field is not excluded by the
+    configured HCVR candidate-level exclusions.
+
+  multiplicity: >
+    One finding per present parameter, not one finding per private field.
+
+exclusions:
+  candidate_level:
+    enabled: true
+    source: AgentRules/Exclusions.yaml
+    matching:
+      target_type: field
+      identifier: field_id
+      comparison: exact
+      case_sensitive: true
+      whitespace_sensitive: true
+      normalization: none
+
+    behavior: >
+      Candidate-level exclusions are evaluated only after deterministic HCVR
+      candidates have been produced. A candidate is excluded only when the
+      applicable HCVR exclusion rule in AgentRules/Exclusions.yaml explicitly
+      matches its field identifier.
+
+    configured_exclusions: >
+      No HCVR candidate-level exclusions are configured unless an explicit
+      HCVR entry exists in AgentRules/Exclusions.yaml.
+
+  legacy:
+    CustomExclusions:
+      module: HCVR
+      status: traceability_only
+      runtime: false
+
+    BaseExclusions:
+      module: HCVR
+      status: traceability_only
+      runtime: false
+
+  restrictions:
+    - >
+      Do not search for or reconstruct CustomExclusions at runtime.
+    - >
+      Do not search for or reconstruct BaseExclusions at runtime.
+    - >
+      Do not introduce any additional exclusion source.
+    - >
+      Do not modify deterministic HCVR candidate-generation logic because
+      of historical exclusion mechanisms.
+    - >
+      AgentRules/Exclusions.yaml is the only repository-wide candidate-level
+      exclusion source.
+
+validation_procedure:
+  type: powershell_xml_parameter_scan
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Deterministically reproduce the Hard-coded Values Rules parameter-emission
+    behavior against the current XML file.
+
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    $nodes = $xml.SelectNodes("//private")
+
+    foreach ($node in $nodes) {
+        $fieldID = $node.GetAttribute("id")
+
+        $parameters = @(
+            @{
+                Name = "Conditional Value Then"
+                XPath = "./rules/value//then"
+            },
+            @{
+                Name = "Conditional Value Else"
+                XPath = "./rules/value//else"
+            },
+            @{
+                Name = "Misc Rule Then"
+                XPath = "./rules/misc//then"
+            },
+            @{
+                Name = "Misc Rule Else"
+                XPath = "./rules/misc//else"
+            }
+        )
+
+        foreach ($parameter in $parameters) {
+            $parameterNode = $node.SelectSingleNode(
+                "$($parameter.XPath)[@value]"
+            )
+
+            if ($null -eq $parameterNode) {
+                continue
+            }
+
+            $paramValue = $parameterNode.GetAttribute("value")
+
+            $results.Add(
+                [PSCustomObject]@{
+                    FieldID = $fieldID
+                    ParamName = $parameter.Name
+                    ParamValue = $paramValue
+                    Location = "$($parameter.XPath)/@value"
+                }
+            )
+        }
+    }
+
+    $results |
+        Sort-Object `
+            @{ Expression = { $_.ParamValue }; Ascending = $true },
+            @{ Expression = { $_.ParamName }; Ascending = $true },
+            @{ Expression = { $_.FieldID }; Ascending = $true }
+
+  execution_constraints:
+    - >
+      The command_template is the authoritative deterministic HCVR validation
+      procedure.
+    - >
+      Execute the command_template directly for each applicable XML file.
+    - >
+      Replace only the <XML_FILE> placeholder with the current XML file path.
+    - >
+      Do not rewrite the command into an alternative validation implementation.
+    - >
+      Do not replace the PowerShell command with LLM-based XML inspection.
+    - >
+      Do not create or depend on a separate generated validator script.
+    - >
+      Do not create or depend on a separate wrapper script for validation
+      semantics.
+    - >
+      Runtime orchestration may only iterate over files, provide runtime
+      values, invoke this command_template, and collect its output.
+    - >
+      Do not modify the XPath, parameter definitions, attribute-presence
+      test, parameter names, value extraction, or sorting behavior.
+    - >
+      The command must operate on the current user-supplied application
+      filesystem.
+    - >
+      The command output is the deterministic HCVR candidate set for that
+      XML file.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must not
+      silently alter validation of other applicable XML files.
+
+  result:
+    type: emitted_parameters
+    matched_nodes_are: candidates
+
+  interpretation:
+    candidate_identity:
+      field_id: FieldID
+      parameter_name: ParamName
+      parameter_value: ParamValue
+      location: Location
+
+    candidate_multiplicity: >
+      One candidate is produced for every listed parameter whose source XML
+      element contains an existing @value attribute. Multiple parameters on
+      the same private field therefore produce multiple candidates.
+
+    confirmed_violation_requires:
+      - >
+        The candidate originates from a private field.
+      - >
+        The source parameter element contains an existing @value attribute.
+      - >
+        The candidate field identifier matches the current private/@id.
+      - >
+        The parameter value exactly matches the current @value string.
+      - >
+        The candidate is not excluded by AgentRules/Exclusions.yaml.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The command output is the deterministic candidate set, not by itself
+        a final confirmed violation set.
+      - >
+        An existing empty @value attribute remains a valid emitted parameter.
+      - >
+        Parameter values must never be trimmed, normalized, decoded, or
+        case-folded.
+      - >
+        Every emitted parameter is evaluated independently.
+      - >
+        Do not introduce additional Then, Else, rule, parameter, or exclusion
+        conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - location
+    - field_id
+    - parameter_name
+    - parameter_value
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_field_id: true
+    include_parameter_name: true
+    include_parameter_value: true
+    include_location: true
+
+verification:
+  source_of_truth: current_application_filesystem
+
+  requirements:
+    - >
+      Verify the XML file still exists at the supplied application path.
+    - >
+      Verify the source private field exists in the current XML.
+    - >
+      Verify the exact parameter element exists.
+    - >
+      Verify the @value attribute exists.
+    - >
+      Verify the reported parameter value exactly matches the current
+      @value string.
+    - >
+      Verify the candidate has not been excluded by
+      AgentRules/Exclusions.yaml.
+    - >
+      Do not alter, trim, normalize, or reinterpret the parameter value.
+
+expected:
+  condition: >
+    Only the four named private-field Then and Else parameters with an
+    existing @value are emitted, subject to configured candidate-level
+    exclusions.
+
+violation:
+  when: >
+    A private field contains one of the four defined Then or Else @value
+    attributes and the resulting candidate is not excluded by
+    AgentRules/Exclusions.yaml.
+
+original_logic:
+  candidate_selector: >
+    //private[
+      rules/value//then/@value or
+      rules/value//else/@value or
+      rules/misc//then/@value or
+      rules/misc//else/@value
+    ]
+
+  inspected_selectors:
+    - '@id'
+    - './/if[then/@value or else/@value]'
+    - 'then/@value'
+    - 'else/@value'
+    - 'msxsl:node-set($Content)/param'
+    - '@paramValue'
+    - '@paramName'
+    - '@fieldID'
+
+  emitted_parameters:
+    - >
+      rules/value//then/@value
+    - >
+      rules/value//else/@value
+    - >
+      rules/misc//then/@value
+    - >
+      rules/misc//else/@value
+
+  final_sort:
+    - '@paramValue'
+    - '@paramName'
+    - '@fieldID'
+
+execution:
+  file_folder_exclusions:
+    source: AgentRules/FileFolderExclusions.yaml
+    responsibility: Skill
+    behavior: >
+      FileFolderExclusions.yaml is applied during normal traversal of the
+      user-supplied application path. Matching files or folders are skipped
+      before HCVR validation is executed.
+
+  candidate_exclusions:
+    source: AgentRules/Exclusions.yaml
+    responsibility: Skill
+    behavior: >
+      Candidate-level exclusions are evaluated only after deterministic HCVR
+      candidate generation. Excluded candidates are removed before evidence
+      verification and reporting.
+
+  application_path:
+    source: user_supplied_path
+    restriction: >
+      Analyze only the application path supplied by the user. Do not switch
+      to another application path, historical output directory, copied
+      application, or another filesystem location.
+
+result_gate:
+  requirements:
+    - >
+      Only candidates produced by the selected HCVR AgentRule may become
+      findings.
+    - >
+      Excluded candidates must not become findings.
+    - >
+      Every remaining candidate must pass current-filesystem evidence
+      verification.
+    - >
+      Only confirmed violations may appear in the final report.
+
+reporting:
+  user_facing_violation:
+    identifier: field_id
+    format: >
+      The generic ApplicationCompliance Skill groups confirmed HCVR violations
+      by source file and lists the field identifier under each file.
+
+  internal_metadata:
+    retained_for_verification:
+      - parameter_name
+      - parameter_value
+      - location
+      - exclusion_status
+    not_rendered_by_default: false
+
+  presentation:
+    controlled_by: ApplicationCompliance Skill
+    requirements:
+      - >
+        Group all confirmed HCVR violations by source file.
+      - >
+        Show each source file name once.
+      - >
+        Show the complete file path once for that source file.
+      - >
+        List confirmed field identifiers beneath the file.
+      - >
+        Preserve the parameter-level multiplicity defined by this AgentRule.
+      - >
+        Do not collapse multiple parameter findings on the same field into
+        one finding.
+
+notes:
+  - >
+    The four HCVR parameter checks are preserved exactly as defined by this
+    AgentRule.
+  - >
+    Parameter presence is determined by existence of the @value attribute.
+  - >
+    An existing empty @value attribute remains a valid emitted parameter.
+  - >
+    Parameter values are never trimmed, normalized, decoded, or case-folded.
+  - >
+    One candidate is produced per present parameter, not per private field.
+  - >
+    The deterministic PowerShell command is the authoritative current
+    validation implementation.
+  - >
+    CustomExclusions and BaseExclusions are preserved only as historical
+    XSL traceability.
+  - >
+    Current candidate-level exclusion behavior is controlled by
+    AgentRules/Exclusions.yaml.
+  - >
+    File and folder traversal exclusions are controlled by
+    AgentRules/FileFolderExclusions.yaml through the ApplicationCompliance
+    Skill.
+  - >
+    No additional validation stage, alternate validator, filtered application
+    path, or secondary exclusion pipeline is introduced.
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

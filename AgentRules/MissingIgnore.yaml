@@ -1,0 +1,629 @@
+﻿id: MI
+name: 'Missing Ignore Lookup/Calculation'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This table lists lookup fields that do not have an Ignore Lookup or Default
+  set. It also lists fields with calculations that do not have Ignore
+  Calculation set when the field is a Float or Integer. A field may be listed
+  multiple times if different field parameters have problems. It checks all
+  numeric calculation fields and lookup fields where the lookup has no
+  onFailure value.
+
+source:
+  file: files/source/MsCop/MissingIgnore.xsl
+  module_id: MI
+  templates:
+    - MissingIgnore
+    - MI_XML
+    - MI_HTML
+    - MI_Data
+    - MI_AddRow_XML
+    - MI_AddRow_HTML
+    - MI_AddParam
+
+target:
+  primary_selector: >
+    //*[
+      (
+        local-name()='public' and (
+          definition/caption/calculation or
+          definition/maxLength/calculation or
+          definition/required/calculation or
+          definition/applicable/calculation or
+          definition/readOnly/calculation or
+          rules/value/calculation or
+          rules/default/calculation or
+          rules/minimum/calculation or
+          rules/maximum/calcuation and (@type='float' or @type='int') or
+          (definition/caption/lookup and (not(definition/caption/lookup/onFailure) or definition/caption/lookup/onFailure='')) or
+          (definition/formatMask/lookup and (not(definition/formatMask/lookup/onFailure) or definition/formatMask/lookup/onFailure='')) or
+          (definition/maxLength/lookup and (not(definition/maxLength/lookup/onFailure) or definition/maxLength/lookup/onFailure='')) or
+          (definition/required/lookup and (not(definition/required/lookup/onFailure) or definition/required/lookup/onFailure='')) or
+          (definition/applicable/lookup and (not(definition/applicable/lookup/onFailure) or definition/applicable/lookup/onFailure='')) or
+          (definition/readOnly/lookup and (not(definition/readOnly/lookup/onFailure) or definition/readOnly/lookup/onFailure='')) or
+          (rules/value/lookup and (not(rules/value/lookup/onFailure) or rules/value/lookup/onFailure='')) or
+          (rules/default/lookup and (not(rules/default/lookup/onFailure) or rules/default/lookup/onFailure='')) or
+          (rules/minimum/lookup and (not(rules/minimum/lookup/onFailure) or rules/minimum/lookup/onFailure='')) or
+          (rules/maximum/lookup and (not(rules/maximum/onFailure) or rules/maximum/onFailure=''))
+        )
+      ) or
+      (
+        local-name()='private' and (
+          rules/value/calculation or
+          rules/default/calculation or
+          rules/minimum/calculation or
+          rules/maximum/calcuation and (@type='float' or @type='int') or
+          (rules/value/lookup and (not(rules/value/lookup/onFailure) or rules/value/lookup/onFailure='')) or
+          (rules/default/lookup and (not(rules/default/lookup/onFailure) or rules/default/lookup/onFailure='')) or
+          (rules/minimum/lookup and (not(rules/minimum/lookup/onFailure) or rules/minimum/lookup/onFailure='')) or
+          (rules/maximum/lookup and (not(rules/maximum/lookup/onFailure) or rules/maximum/lookup/onFailure=''))
+        )
+      )
+    ]
+
+  inspected_selectors:
+    - >
+      //*[
+        (
+          local-name()='public' and (
+            definition/caption/calculation or
+            definition/maxLength/calculation or
+            definition/required/calculation or
+            definition/applicable/calculation or
+            definition/readOnly/calculation or
+            rules/value/calculation or
+            rules/default/calculation or
+            rules/minimum/calculation or
+            rules/maximum/calcuation and (@type='float' or @type='int') or
+            (definition/caption/lookup and (not(definition/caption/lookup/onFailure) or definition/caption/lookup/onFailure='')) or
+            (definition/formatMask/lookup and (not(definition/formatMask/lookup/onFailure) or definition/formatMask/lookup/onFailure='')) or
+            (definition/maxLength/lookup and (not(definition/maxLength/lookup/onFailure) or definition/maxLength/lookup/onFailure='')) or
+            (definition/required/lookup and (not(definition/required/lookup/onFailure) or definition/required/lookup/onFailure='')) or
+            (definition/applicable/lookup and (not(definition/applicable/lookup/onFailure) or definition/applicable/lookup/onFailure='')) or
+            (definition/readOnly/lookup and (not(definition/readOnly/lookup/onFailure) or definition/readOnly/lookup/onFailure='')) or
+            (rules/value/lookup and (not(rules/value/lookup/onFailure) or rules/value/lookup/onFailure='')) or
+            (rules/default/lookup and (not(rules/default/lookup/onFailure) or rules/default/lookup/onFailure='')) or
+            (rules/minimum/lookup and (not(rules/minimum/lookup/onFailure) or rules/minimum/lookup/onFailure='')) or
+            (rules/maximum/lookup and (not(rules/maximum/onFailure) or rules/maximum/onFailure=''))
+          )
+        ) or
+        (
+          local-name()='private' and (
+            rules/value/calculation or
+            rules/default/calculation or
+            rules/minimum/calculation or
+            rules/maximum/calcuation and (@type='float' or @type='int') or
+            (rules/value/lookup and (not(rules/value/lookup/onFailure) or rules/value/lookup/onFailure='')) or
+            (rules/default/lookup and (not(rules/default/lookup/onFailure) or rules/default/lookup/onFailure='')) or
+            (rules/minimum/lookup and (not(rules/minimum/lookup/onFailure) or rules/minimum/lookup/onFailure='')) or
+            (rules/maximum/lookup and (not(rules/maximum/onFailure) or rules/maximum/onFailure=''))
+          )
+        )
+      ]
+    - >
+      @id
+    - >
+      definition/caption/calculation
+    - >
+      definition/formatMask/calculation
+    - >
+      definition/maxLength/calculation
+    - >
+      definition/required/calculation
+    - >
+      definition/applicable/calculation
+    - >
+      definition/readOnly/calculation
+    - >
+      rules/value/calculation
+    - >
+      rules/default/calculation
+    - >
+      rules/minimum/calculation
+    - >
+      rules/maximum/calculation
+    - >
+      definition/caption/lookup
+    - >
+      definition/formatMask/lookup
+    - >
+      definition/maxLength/lookup
+    - >
+      definition/required/lookup
+    - >
+      definition/applicable/lookup
+    - >
+      definition/readOnly/lookup
+    - >
+      rules/value/lookup
+    - >
+      rules/default/lookup
+    - >
+      rules/minimum/lookup
+    - >
+      rules/maximum/lookup
+    - >
+      @onFailure
+
+condition:
+  type: missing_ignore_lookup_or_calculation
+  rule:
+    - >
+      Consider public and private field elements selected by the source XSL
+      candidate predicate.
+    - >
+      A numeric calculation parameter is reported when the corresponding
+      calculation element exists and the field type is float or int.
+    - >
+      A lookup parameter is reported when the corresponding lookup exists and
+      its onFailure attribute is missing or empty.
+    - >
+      Each problematic parameter produces a separate result row.
+  calculation:
+    applicable_types:
+      - float
+      - int
+    reported_parameters:
+      public:
+        - Format Mask
+        - Caption
+        - Max Length
+        - Applicable
+        - Required
+        - Read Only
+        - Value
+        - Default
+        - Minimum
+        - Maximum
+      private:
+        - Value
+        - Default
+        - Minimum
+        - Maximum
+    condition: >
+      The corresponding calculation element exists and @type is float or int.
+  lookup:
+    onFailure:
+      missing: true
+      empty_string: true
+    public_parameters:
+      - Caption
+      - Max Length
+      - Required
+      - Applicable
+      - Read Only
+      - Format Mask
+      - Value
+      - Default
+      - Minimum
+      - Maximum
+    private_parameters:
+      - Value
+      - Default
+      - Minimum
+      - Maximum
+  multiplicity:
+    type: one_row_per_problematic_parameter
+    preserve_multiple_rows: true
+
+exclusions:
+  - >
+    Candidate-level exclusions are evaluated through the current
+    AgentRules/Exclusions.yaml configuration for module MI.
+  - >
+    The original XSL excludes the entire field, not individual parameters,
+    through CustomExclusions and BaseExclusions.
+  - >
+    CustomExclusions and BaseExclusions from the original XSL are retained
+    for source traceability only and are not current runtime exclusion sources.
+
+validation_procedure:
+  type: powershell_xml_parameter_scan
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+  purpose: >
+    Execute deterministic MI validation against each applicable XML file and
+    reproduce the source XSL's one-row-per-problematic-parameter behavior.
+
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = foreach ($field in $xml.SelectNodes("//*")) {
+        $localName = $field.LocalName
+
+        if ($localName -ne "public" -and $localName -ne "private") {
+            continue
+        }
+
+        $type = $field.GetAttribute("type")
+        $isNumeric = $type -eq "float" -or $type -eq "int"
+
+        $candidate = $false
+
+        if ($localName -eq "public") {
+            $candidate =
+                $null -ne $field.SelectSingleNode("definition/caption/calculation") -or
+                $null -ne $field.SelectSingleNode("definition/maxLength/calculation") -or
+                $null -ne $field.SelectSingleNode("definition/required/calculation") -or
+                $null -ne $field.SelectSingleNode("definition/applicable/calculation") -or
+                $null -ne $field.SelectSingleNode("definition/readOnly/calculation") -or
+                $null -ne $field.SelectSingleNode("rules/value/calculation") -or
+                $null -ne $field.SelectSingleNode("rules/default/calculation") -or
+                $null -ne $field.SelectSingleNode("rules/minimum/calculation") -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/maximum/calcuation") -and
+                    $isNumeric
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("definition/caption/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("definition/caption/lookup/@onFailure") -or
+                        $field.SelectSingleNode("definition/caption/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("definition/formatMask/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("definition/formatMask/lookup/@onFailure") -or
+                        $field.SelectSingleNode("definition/formatMask/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("definition/maxLength/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("definition/maxLength/lookup/@onFailure") -or
+                        $field.SelectSingleNode("definition/maxLength/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("definition/required/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("definition/required/lookup/@onFailure") -or
+                        $field.SelectSingleNode("definition/required/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("definition/applicable/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("definition/applicable/lookup/@onFailure") -or
+                        $field.SelectSingleNode("definition/applicable/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("definition/readOnly/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("definition/readOnly/lookup/@onFailure") -or
+                        $field.SelectSingleNode("definition/readOnly/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/value/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/value/lookup/@onFailure") -or
+                        $field.SelectSingleNode("rules/value/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/default/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/default/lookup/@onFailure") -or
+                        $field.SelectSingleNode("rules/default/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/minimum/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/minimum/lookup/@onFailure") -or
+                        $field.SelectSingleNode("rules/minimum/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/maximum/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/maximum/@onFailure") -or
+                        $field.SelectSingleNode("rules/maximum/@onFailure").Value -eq ""
+                    )
+                )
+        }
+        else {
+            $candidate =
+                $null -ne $field.SelectSingleNode("rules/value/calculation") -or
+                $null -ne $field.SelectSingleNode("rules/default/calculation") -or
+                $null -ne $field.SelectSingleNode("rules/minimum/calculation") -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/maximum/calcuation") -and
+                    $isNumeric
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/value/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/value/lookup/@onFailure") -or
+                        $field.SelectSingleNode("rules/value/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/default/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/default/lookup/@onFailure") -or
+                        $field.SelectSingleNode("rules/default/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/minimum/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/minimum/lookup/@onFailure") -or
+                        $field.SelectSingleNode("rules/minimum/lookup/@onFailure").Value -eq ""
+                    )
+                ) -or
+                (
+                    $null -ne $field.SelectSingleNode("rules/maximum/lookup") -and
+                    (
+                        $null -eq $field.SelectSingleNode("rules/maximum/@onFailure") -or
+                        $field.SelectSingleNode("rules/maximum/@onFailure").Value -eq ""
+                    )
+                )
+        }
+
+        if (-not $candidate) {
+            continue
+        }
+
+        $rows = [System.Collections.Generic.List[object]]::new()
+
+        if ($isNumeric) {
+            if ($localName -eq "public") {
+                $calculationChecks = @(
+                    @{ Path="definition/formatMask/calculation"; Name="Format Mask" }
+                    @{ Path="definition/caption/calculation"; Name="Caption" }
+                    @{ Path="definition/maxLength/calculation"; Name="Max Length" }
+                    @{ Path="definition/applicable/calculation"; Name="Applicable" }
+                    @{ Path="definition/required/calculation"; Name="Required" }
+                    @{ Path="definition/readOnly/calculation"; Name="Read Only" }
+                    @{ Path="rules/value/calculation"; Name="Value" }
+                    @{ Path="rules/default/calculation"; Name="Default" }
+                    @{ Path="rules/minimum/calculation"; Name="Minimum" }
+                    @{ Path="rules/maximum/calculation"; Name="Maximum" }
+                )
+            }
+            else {
+                $calculationChecks = @(
+                    @{ Path="rules/value/calculation"; Name="Value" }
+                    @{ Path="rules/default/calculation"; Name="Default" }
+                    @{ Path="rules/minimum/calculation"; Name="Minimum" }
+                    @{ Path="rules/maximum/calculation"; Name="Maximum" }
+                )
+            }
+
+            foreach ($check in $calculationChecks) {
+                if ($null -ne $field.SelectSingleNode($check.Path)) {
+                    $rows.Add(
+                        [PSCustomObject]@{
+                            FieldID = $field.GetAttribute("id")
+                            ParamName = $check.Name
+                            ParamType = "Calculation"
+                        }
+                    )
+                }
+            }
+        }
+
+        if ($localName -eq "public") {
+            $lookupChecks = @(
+                @{ Path="definition/caption/lookup"; Name="Caption"; OnFailure="self" }
+                @{ Path="definition/maxLength/lookup"; Name="Max Length"; OnFailure="self" }
+                @{ Path="definition/required/lookup"; Name="Required"; OnFailure="self" }
+                @{ Path="definition/applicable/lookup"; Name="Applicable"; OnFailure="self" }
+                @{ Path="definition/readOnly/lookup"; Name="Read Only"; OnFailure="self" }
+                @{ Path="definition/formatMask/lookup"; Name="Format Mask"; OnFailure="self" }
+                @{ Path="rules/value/lookup"; Name="Value"; OnFailure="self" }
+                @{ Path="rules/default/lookup"; Name="Default"; OnFailure="self" }
+                @{ Path="rules/minimum/lookup"; Name="Minimum"; OnFailure="self" }
+                @{ Path="rules/maximum/lookup"; Name="Maximum"; OnFailure="rules-maximum-parent" }
+            )
+        }
+        else {
+            $lookupChecks = @(
+                @{ Path="rules/value/lookup"; Name="Value"; OnFailure="self" }
+                @{ Path="rules/default/lookup"; Name="Default"; OnFailure="self" }
+                @{ Path="rules/minimum/lookup"; Name="Minimum"; OnFailure="self" }
+                @{ Path="rules/maximum/lookup"; Name="Maximum"; OnFailure="rules-maximum-parent" }
+            )
+        }
+
+        foreach ($check in $lookupChecks) {
+            $lookup = $field.SelectSingleNode($check.Path)
+            if ($null -eq $lookup) {
+                continue
+            }
+
+            if ($check.OnFailure -eq "rules-maximum-parent") {
+                $onFailure = $field.SelectSingleNode("rules/maximum/@onFailure")
+            }
+            else {
+                $onFailure = $lookup.SelectSingleNode("@onFailure")
+            }
+
+            if ($null -eq $onFailure -or $onFailure.Value -eq "") {
+                $rows.Add(
+                    [PSCustomObject]@{
+                        FieldID = $field.GetAttribute("id")
+                        ParamName = $check.Name
+                        ParamType = "Lookup"
+                    }
+                )
+            }
+        }
+
+        foreach ($row in $rows) {
+            $row
+        }
+    }
+
+    $results |
+        Sort-Object ParamType, ParamName, FieldID |
+        Select-Object FieldID, ParamName, ParamType
+
+  execution_constraints:
+    - >
+      Execute the command_template against each applicable XML file.
+    - >
+      Replace <XML_FILE> only with the current XML file path.
+    - >
+      Do not replace the deterministic validation with a different validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and
+      result collection while preserving command semantics.
+    - >
+      Preserve one output row for every problematic parameter.
+    - >
+      Candidate-level exclusions from AgentRules/Exclusions.yaml are evaluated
+      after candidate generation.
+    - >
+      Do not independently reconstruct CustomExclusions or BaseExclusions at
+      runtime.
+    - >
+      Preserve the source XSL's parameter ordering semantics before the final
+      ParamType, ParamName, FieldID sort.
+  result:
+    type: parameter_rows
+    columns:
+      - FieldID
+      - ParamName
+      - ParamType
+    matched_rows_are: candidates
+
+  interpretation:
+    confirmed_violation_requires:
+      - >
+        The field is a public or private element selected by the source
+        candidate semantics.
+      - >
+        The reported parameter corresponds to an existing calculation or
+        lookup meeting the source condition.
+      - >
+        The field is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+    calculation_violation: >
+      A numeric field contains one of the calculation parameters reported by
+      the source MI_Data template.
+    lookup_violation: >
+      A lookup parameter exists and its applicable onFailure attribute is
+      missing or empty according to the corresponding source XSL test.
+    important:
+      - >
+        A field may generate multiple rows when multiple calculation or lookup
+        parameters are problematic.
+      - >
+        Candidate generation and parameter-row generation reproduce separate
+        stages of the original MI_Data template.
+      - >
+        The source XSL contains legacy XPath spelling/structure such as
+        rules/maximum/calcuation in the candidate predicate and unusual
+        onFailure expressions for maximum/minimum lookup checks. These are
+        preserved rather than silently corrected.
+      - >
+        CustomExclusions and BaseExclusions are traceability-only for the
+        current AgentRule execution.
+
+evidence:
+  required:
+    - file
+    - location
+    - field_id
+    - parameter_name
+    - parameter_type
+    - actual_value
+    - exclusion_status
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+    include_field_id: true
+    include_parameter_name: true
+    include_parameter_type: true
+
+expected:
+  condition: >
+    Lookup parameters should have an onFailure behavior, and numeric
+    calculation parameters should be covered by the appropriate ignore
+    calculation behavior according to review policy.
+
+violation:
+  when: >
+    A public or private field contains a calculation or lookup parameter
+    identified by the source MI logic as missing the required ignore/failure
+    handling, and the field is not excluded by AgentRules/Exclusions.yaml.
+
+original_logic:
+  exact_select_expressions:
+    - >
+      //*[(local-name()='public' and ((definition/caption/calculation or definition/maxLength/calculation or definition/required/calculation or definition/applicable/calculation or definition/readOnly/calculation or rules/value/calculation or rules/default/calculation or rules/minimum/calculation or rules/maximum/calcuation and (@type='float' or @type='int')) or (definition/caption/lookup and (not(definition/caption/lookup/onFailure) or definition/caption/lookup/onFailure='')) or (definition/formatMask/lookup and (not(definition/formatMask/lookup/onFailure) or definition/formatMask/lookup/onFailure='')) or (definition/maxLength/lookup and (not(definition/maxLength/lookup/onFailure) or definition/maxLength/lookup/onFailure='')) or (definition/required/lookup and (not(definition/required/lookup/onFailure) or definition/required/lookup/onFailure='')) or (definition/applicable/lookup and (not(definition/applicable/lookup/onFailure) or definition/applicable/lookup/onFailure='')) or (definition/readOnly/lookup and (not(definition/readOnly/lookup/onFailure) or definition/readOnly/lookup/onFailure='')) or (rules/value/lookup and (not(rules/value/lookup/onFailure) or rules/value/lookup/onFailure='')) or (rules/default/lookup and (not(rules/default/lookup/onFailure) or rules/default/lookup/onFailure='')) or (rules/minimum/lookup and (not(rules/minimum/lookup/onFailure) or rules/minimum/lookup/onFailure='')) or (rules/maximum/lookup and (not(rules/maximum/onFailure) or rules/maximum/onFailure='')))) or (local-name()='private' and ((rules/value/calculation or rules/default/calculation or rules/minimum/calculation or rules/maximum/calcuation and (@type='float' or @type='int')) or (rules/value/lookup and (not(rules/value/lookup/onFailure) or rules/value/lookup/onFailure='')) or (rules/default/lookup and (not(rules/default/lookup/onFailure) or rules/default/lookup/onFailure='')) or (rules/minimum/lookup and (not(rules/minimum/lookup/onFailure) or rules/minimum/lookup/onFailure='')) or (rules/maximum/lookup and (not(rules/maximum/onFailure) or rules/maximum/onFailure='')))) and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MI']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MI']/field/@id)]
+    - >
+      @id
+    - >
+      msxsl:node-set($Content)/param
+    - >
+      @paramType
+    - >
+      @paramName
+    - >
+      @fieldID
+  parameter_output:
+    calculation:
+      public:
+        - Format Mask
+        - Caption
+        - Max Length
+        - Applicable
+        - Required
+        - Read Only
+        - Value
+        - Default
+        - Minimum
+        - Maximum
+      private:
+        - Value
+        - Default
+        - Minimum
+        - Maximum
+    lookup:
+      public:
+        - Caption
+        - Max Length
+        - Required
+        - Applicable
+        - Read Only
+        - Format Mask
+        - Value
+        - Default
+        - Minimum
+        - Maximum
+      private:
+        - Value
+        - Default
+        - Minimum
+        - Maximum
+  sorting:
+    - '@paramType'
+    - '@paramName'
+    - '@fieldID'
+
+notes:
+  - >
+    The source XSL explicitly states that exclusions apply to the entire field,
+    not to individual parameters.
+  - >
+    The source generates one param record for every problematic parameter and
+    subsequently sorts those records by paramType, paramName, and fieldID.
+  - >
+    Legacy CustomExclusions and BaseExclusions remain in original_logic for
+    traceability only.
+  - >
+    The deterministic command preserves source-XSL spelling and predicate
+    behavior rather than correcting apparent legacy XPath inconsistencies.
+    ..

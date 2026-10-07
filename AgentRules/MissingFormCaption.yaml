@@ -1,0 +1,210 @@
+﻿```yaml
+id: MFC
+name: 'Missing Form Caption'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This list shows all forms in the ManuScript where the form caption is not
+  defined. All Commercial Templates forms must have captions.
+
+source:
+  file: files/source/MsCop/MissingFormCaption.xsl
+  module_id: MFC
+  templates:
+    - MissingFormCaption
+    - MFC_XML
+    - MFC_HTML
+    - MFC_Data
+    - MFC_AddRow_XML
+    - MFC_AddRow_HTML
+
+target:
+  primary_selector: >
+    documents/documentSet[
+      (@caption='' or not(@caption))
+      and
+      (@captionOverride='' or not(@captionOverride))
+    ]
+
+  inspected_selectors:
+    - >
+        documents/documentSet[
+          (@caption='' or not(@caption))
+          and
+          (@captionOverride='' or not(@captionOverride))
+          and
+          not(@name = msxsl:node-set($CustomExclusions)/module[@id='MFC']/form/@name)
+          and
+          not(@name = msxsl:node-set($BaseExclusions)/module[@id='MFC']/form/@name)
+        ]
+
+    - >
+        @name
+
+condition:
+  type: missing_or_empty_caption
+
+  rule:
+    - Consider documentSet elements under documents.
+    - A documentSet is a candidate when @caption is missing or empty.
+    - The documentSet must also have @captionOverride missing or empty.
+  
+
+  caption:
+    attribute: '@caption'
+    missing: true
+    empty_string: true
+    whitespace_normalization: false
+
+  caption_override:
+    attribute: '@captionOverride'
+    required_to_be_missing_or_empty: true
+
+exclusions:
+  - >
+    Candidate-level exclusions are evaluated only through the current
+    repository-wide exclusion configuration:
+    AgentRules/Exclusions.yaml.
+
+  - >
+    The current MFC candidate-level exclusion configuration contains no
+    configured exclusions unless an entry is explicitly present for MFC
+    in AgentRules/Exclusions.yaml.
+
+  - >
+    CustomExclusions and BaseExclusions from the original MSCop XSL are
+    historical/original rule semantics and are not current runtime
+    exclusion sources for this AgentRule.
+
+  - >
+    Do not search for, reconstruct, or apply CustomExclusions or
+    BaseExclusions as a separate runtime exclusion mechanism.
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic MFC XML validation against each applicable
+    XML file in the supplied application.
+
+  xpath: >
+    //documents/documentSet[
+      (@caption='' or not(@caption))
+      and
+      (@captionOverride='' or not(@captionOverride))
+    ]
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath
+    "//documents/documentSet[(@caption='' or not(@caption)) and (@captionOverride='' or not(@captionOverride))]"
+
+  execution_constraints:
+    - Execute the command_template directly using the available command execution capability.
+    - Replace <XML_FILE> with the current XML file being analyzed.
+    - Execute the command separately for each applicable XML file.
+    - Do not generate a separate PowerShell script to replace the command_template.
+    - Do not modify the command_template or its XPath semantics.
+    - Treat the command output as the candidate set for this rule.
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      Nodes returned by the XPath are candidates for Missing Form Caption.
+
+    confirmed_violation_requires:
+    - The matched node is a documents/documentSet element.
+    - @caption is missing or empty.
+    - @captionOverride is missing or empty.
+    - Any applicable candidate-level exclusions defined in
+      AgentRules/Exclusions.yaml have been evaluated.
+    - The candidate is not excluded by an applicable entry in
+      AgentRules/Exclusions.yaml.
+
+  important:
+    - >
+      The Select-Xml result is a candidate set, not by itself a confirmed
+      violation.
+
+    - >
+      After candidate generation, evaluate the candidate against
+      AgentRules/Exclusions.yaml.
+
+    - >
+      CustomExclusions and BaseExclusions are part of the original MSCop
+      XSL semantics for traceability only. They are not current runtime
+      exclusion sources for this AgentRule.
+
+    - >
+      Do not search for, reconstruct, or apply CustomExclusions or
+      BaseExclusions during current execution.
+
+    - >
+      Do not use the validation XPath as a substitute for the complete
+      current AgentRule execution flow.
+
+evidence:
+  required:
+    - file
+    - location
+    - form_name
+    - caption
+    - caption_override
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+    include_form_name: true
+
+expected:
+  condition: >
+    Commercial Templates documentSet forms must have a defined caption,
+    unless excluded by an applicable entry in AgentRules/Exclusions.yaml.
+violation:
+  when: >
+    A documents/documentSet has no caption or an empty caption, has no
+    captionOverride or an empty captionOverride, and is not excluded by
+    an applicable entry in AgentRules/Exclusions.yaml.
+original_logic:
+  exact_select_expressions:
+    - >
+        documents/documentSet[
+          (@caption='' or not(@caption))
+          and
+          (@captionOverride='' or not(@captionOverride))
+          and
+          not(@name = msxsl:node-set($CustomExclusions)/module[@id='MFC']/form/@name)
+          and
+          not(@name = msxsl:node-set($BaseExclusions)/module[@id='MFC']/form/@name)
+        ]
+
+    - >
+        @name
+
+notes:
+  - >
+    The original XSL selector contains both the missing-caption condition
+    and exclusion logic.
+    - >
+    The deterministic Select-Xml validation identifies the structural
+    candidate first. Candidate-level exclusion evaluation is performed
+    using AgentRules/Exclusions.yaml before reporting a confirmed violation.
+
+  - >
+    CustomExclusions and BaseExclusions are retained in original_logic
+    for traceability to the legacy XSL only and are not runtime exclusion
+    sources for the current AgentRule.
+    The validation XPath should be kept semantically aligned with the
+    original XSL and must not introduce a different XML structure.
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.
+```

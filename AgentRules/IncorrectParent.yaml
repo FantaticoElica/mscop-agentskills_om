@@ -1,0 +1,217 @@
+﻿id: IP
+name: 'Incorrect Parent'
+category: 'Error'
+status: READY
+validation: VALIDATED
+generated: true
+description: >
+  This table shows any fields or groups that do not have a group as an immediate parent. Fields can only be placed inside of groups. Groups can only be placed inside of other groups (groups immediately under the "model" element are excluded from this list). Items listed in this table do not follow these two rules. The only way to fix these problems will be to directly change the ManuScript XML. This problem was likely introduced by an incorrect merge from a Source Control program.
+
+source:
+  file: files/source/MsCop/IncorrectParent.xsl
+  module_id: IP
+  templates:
+    - IncorrectParent
+    - IP_XML
+    - IP_HTML
+    - IP_Data
+    - IP_AddRow_XML
+    - IP_AddRow_HTML
+
+target:
+  primary_selector: >
+    //*[
+      ((local-name()='public' or local-name()='private')
+        and local-name(..)!='object')
+      or
+      (local-name()='object'
+        and local-name(..)!='object'
+        and local-name(..)!='model')
+    ]
+  inspected_selectors:
+    - >
+      //*[
+        ((local-name()='public' or local-name()='private')
+          and local-name(..)!='object')
+        or
+        (local-name()='object'
+          and local-name(..)!='object'
+          and local-name(..)!='model')
+      ]
+    - >
+      @id
+    - >
+      local-name(..)
+    - >
+      ../@id
+
+condition:
+  rule:
+    - >
+      A public or private field is a violation when its immediate parent is not
+      an object group.
+    - >
+      An object group is a violation when its immediate parent is neither
+      another object group nor the model element.
+    - >
+      Object groups immediately under the model element are explicitly
+      excluded, as are objects nested directly under another object.
+  field_parent:
+    field_types:
+      - public
+      - private
+    required_parent: object
+    violation_when_parent_is: object
+  object_parent:
+    element_type: object
+    allowed_immediate_parents:
+      - object
+      - model
+    violation_when_parent_is:
+      - object
+      - model
+  scope: per_xml_file
+  case_sensitive: true
+  whitespace_sensitive: true
+
+exclusions:
+  - >
+    Candidate-level exclusions are resolved from the current
+    AgentRules/Exclusions.yaml configuration for module IP.
+  - >
+    CustomExclusions and BaseExclusions referenced by the original XSL are
+    retained as source traceability; they are not independently reimplemented
+    when the current AgentRules exclusion configuration is available.
+
+validation_procedure:
+  type: powershell_xml_parent_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    per_file: true
+  purpose: >
+    Parse each applicable XML file and deterministically identify public/private
+    fields whose immediate parent is not object, and object elements whose
+    immediate parent is neither object nor model, matching the selection logic
+    of the IP XSL.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = @(
+        $xml.SelectNodes("//*[local-name()='public' or local-name()='private']") |
+            Where-Object {
+                $_.ParentNode.LocalName -ne "object"
+            } |
+            ForEach-Object {
+                [PSCustomObject]@{
+                    FieldID        = $_.GetAttribute("id")
+                    ParentElement  = $_.ParentNode.LocalName
+                    ParentID       = $_.ParentNode.GetAttribute("id")
+                }
+            }
+
+        $xml.SelectNodes("//*[local-name()='object']") |
+            Where-Object {
+                $_.ParentNode.LocalName -ne "object" -and
+                $_.ParentNode.LocalName -ne "model"
+            } |
+            ForEach-Object {
+                [PSCustomObject]@{
+                    FieldID        = $_.GetAttribute("id")
+                    ParentElement  = $_.ParentNode.LocalName
+                    ParentID       = $_.ParentNode.GetAttribute("id")
+                }
+            }
+    )
+
+    $results |
+        Sort-Object FieldID |
+        Select-Object FieldID, ParentElement, ParentID
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of IP validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Candidate exclusions must be applied according to the current
+      AgentRules/Exclusions.yaml configuration.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Do not infer violations from filenames, folder names, or non-XML metadata.
+    - >
+      Results must preserve FieldID, ParentElement, and ParentID evidence.
+  result:
+    candidate_fields:
+      - FieldID
+      - ParentElement
+      - ParentID
+  interpretation:
+    violation_when: >
+      A returned field or object remains after configured IP exclusions are
+      applied.
+    no_violation_when: >
+      No applicable candidate remains after configured exclusions.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an IP violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the deterministic command_template
+      returns the corresponding element and immediate-parent relationship.
+    - >
+      Excluded candidates are not reported as confirmed violations.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - field_id
+    - parent_element
+    - parent_id
+
+expected:
+  public_private:
+    parent_element: object
+  object:
+    parent_element:
+      - object
+      - model
+
+violation:
+  public_private:
+    message: 'Field does not have an object group as its immediate parent'
+  object:
+    message: 'Group does not have an object group or model as its immediate parent'
+
+original_logic:
+  exact_select_expressions:
+    - >
+      //*[((local-name()='public' or local-name()='private') and not(@id = msxsl:node-set($CustomExclusions)/module[@id='IP']/*/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='IP']/*/@id) and local-name(..)!='object') or (local-name()='object' and not(@id = msxsl:node-set($CustomExclusions)/module[@id='IP']/*/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='IP']/*/@id) and local-name(..)!='object' and local-name(..)!='model')]
+  sorting:
+    - '@id'
+  output_fields:
+    - fieldID
+    - parentElement
+    - parentID
+
+notes:
+  - >
+    The original XSL excludes candidates through CustomExclusions and
+    BaseExclusions for module IP.
+  - >
+    The original XSL sorts all selected candidates by @id before rendering.
+  - >
+    The original XSL reports the immediate parent element name and parent ID
+    alongside the offending element ID.
+  - >
+    Objects directly under model are intentionally excluded by the source XSL.
+  - >
+    Objects directly under another object are intentionally excluded by the
+    source XSL.

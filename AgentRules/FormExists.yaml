@@ -1,0 +1,273 @@
+﻿id: FE
+name: Form Exists
+category: Standards
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Report each printDoc reference whose named documentSet form does not exist
+  in the same XML document.
+
+source:
+  file: files/source/MsCop/FormExists.xsl
+  module_id: FE
+  templates:
+    - FormExists
+    - FE_XML
+    - FE_Data
+    - FE_AddRow_XML
+    - FE_AddRow_HTML
+
+target:
+  primary_selector: >
+    documents//printDoc
+
+  inspected_selectors:
+    - >
+        documents//printDoc
+    - >
+        @name
+    - >
+        ../@name
+    - >
+        //documentSet[@name=$printDocName]
+
+  element_type: printDoc
+  attribute: name
+  scope: single_xml_document
+
+condition:
+  type: missing_relationship
+  scope: single_xml_document
+
+  comparison:
+    type: exact_string
+    case_sensitive: true
+    whitespace_sensitive: true
+    normalization: none
+
+  rule:
+    - >
+      Consider printDoc elements selected by documents//printDoc.
+    - >
+      Read the @name attribute of each printDoc.
+    - >
+      Use the current printDoc/@name as the form name to search for within
+      documentSet elements in the same XML document.
+    - >
+      A matching documentSet exists when a documentSet has an @name value
+      exactly equal to the current printDoc/@name.
+    - >
+      A printDoc is a violation when no documentSet with the exact same
+      @name exists in the same XML document.
+    - >
+      Comparison is case-sensitive and whitespace-sensitive.
+    - >
+      Do not trim, normalize, lowercase, uppercase, or otherwise transform
+      form names.
+    - >
+      documentSet occurrences in different XML documents must never be
+      compared.
+    - >
+      Candidate-level exclusions must be evaluated through the current
+      AgentRules/Exclusions.yaml configuration.
+
+exclusions:
+  - >
+    Elements other than printDoc are ignored for candidate discovery.
+  - >
+    Attributes other than name are ignored for the printDoc relationship.
+  - >
+    documentSet occurrences in different XML documents are never compared.
+  - >
+    Candidate-level exclusions are evaluated through the current
+    AgentRules/Exclusions.yaml configuration.
+  - >
+    Do not reconstruct CustomExclusions or BaseExclusions from the original
+    XSL as a separate runtime exclusion mechanism unless explicitly configured
+    through the current AgentRules/Exclusions.yaml.
+  - >
+    An applicable candidate-level exclusion must be evaluated before
+    confirming a violation.
+
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic Form Exists structural validation against
+    each applicable XML file in the supplied application.
+
+  xpath: >
+    documents//printDoc
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath "documents//printDoc"
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its XPath semantics.
+    - >
+      Treat the command output as the structural candidate set for this
+      rule.
+    - >
+      Evaluate each printDoc candidate against documentSet elements in
+      the same XML document using the exact @name comparison defined by
+      this AgentRule.
+    - >
+      Preserve case-sensitive and whitespace-sensitive comparison semantics.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+    - >
+      Candidate-level exclusions must be evaluated through the current
+      AgentRules/Exclusions.yaml configuration.
+    - >
+      Do not replace the deterministic validation procedure with an
+      independently implemented XPath, regex, XML parser, LLM inspection,
+      or alternate validator.
+
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      printDoc nodes returned by the validation XPath are structural
+      candidates requiring evaluation of their referenced form against
+      documentSet elements in the same XML document.
+
+    confirmed_violation_requires:
+      - >
+        The matched node is a printDoc element.
+      - >
+        The printDoc has a name attribute.
+      - >
+        No documentSet element in the same XML document has an @name value
+        exactly equal to the current printDoc/@name.
+      - >
+        Comparison is case-sensitive.
+      - >
+        Whitespace is significant.
+      - >
+        No trimming, normalization, or case conversion is applied.
+      - >
+        The candidate is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The Select-Xml result is a structural candidate set, not by itself
+        a confirmed violation.
+      - >
+        The form existence relationship must be evaluated for every
+        applicable printDoc candidate.
+      - >
+        documentSet matching is scoped to the current XML document.
+      - >
+        A matching documentSet in another XML file does not satisfy the
+        relationship.
+      - >
+        Candidate-level exclusions must be evaluated before reporting a
+        confirmed violation.
+      - >
+        Do not introduce additional form, relationship, comparison, or
+        exclusion conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - location
+    - print_doc_name
+    - print_job_name
+    - matching_document_set_count
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+
+expected:
+  condition: >
+    Every printDoc name has at least one matching documentSet in the same
+    XML document unless excluded by an applicable entry in
+    AgentRules/Exclusions.yaml.
+
+violation:
+  when: >
+    No documentSet in the same XML document has an @name value exactly equal
+    to the current printDoc/@name, the candidate is not excluded by an
+    applicable entry in AgentRules/Exclusions.yaml, and the condition is
+    confirmed against the current application filesystem.
+
+original_logic:
+  exact_select_expression: >
+    documents//printDoc
+
+  exact_exclusion_expression: >
+    documents//printDoc[
+      not(
+        @name =
+        msxsl:node-set($CustomExclusions)/module[@id='FE']/form/@name
+      )
+    ]
+
+  exact_count_expression: >
+    count(//documentSet[@name=$printDocName])
+
+  exact_test_expression: >
+    $formCount=0
+
+  exact_bindings:
+    print_doc_name: '@name'
+    print_job_name: '../@name'
+
+  scope_note: >
+    The original FE_Data logic evaluates each printDoc independently and
+    searches for a matching documentSet within the same XML document.
+
+notes:
+  - >
+    The original XSL selects documents//printDoc, obtains the printDoc name,
+    and reports the printDoc when no documentSet with the same name exists
+    in the current XML document.
+
+  - >
+    The deterministic Select-Xml validation identifies the printDoc
+    candidate set first. Each candidate must then be evaluated against
+    the missing-relationship condition before it can become a confirmed
+    violation.
+
+  - >
+    The print job name is obtained from the parent element's @name attribute
+    and is retained as evidence for the reported violation.
+
+  - >
+    The original CustomExclusions expression is retained in original_logic
+    for traceability. Current candidate-level exclusion evaluation follows
+    AgentRules/Exclusions.yaml.
+
+  - >
+    The commented documentSet selector in the original XSL is not executable
+    FE validation logic.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

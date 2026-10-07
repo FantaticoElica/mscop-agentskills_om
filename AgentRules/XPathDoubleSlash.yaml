@@ -1,0 +1,440 @@
+﻿name: 'XPath Double Slash'
+category: 'Performance'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Using a defined XPath expression can help increase performance. However, use of the "//" expression (descendent of) is very expensive. The double slash says to check all nodes from the current context. It is almost always preferable to use an explicit XPath expression instead of a double slash. In fact, in some cases Request fields can fail entirely if a double slash is used in the Response Path. Items on this list should be considered for expanding the "//" into a full path from the current context, to the node you are trying to match. This table lists fields where a "//" was found and what field parameter it was found in. A field may be listed multiple times if a "//" was found in several different parameters.
+
+source:
+  file: files/source/MsCop/XPathDoubleSlash.xsl
+  module_id: XDS
+  templates:
+    - XPathDoubleSlash
+    - XDS_XML
+    - XDS_HTML
+    - XDS_Data
+    - XDS_AddRow_XML
+    - XDS_AddRow_HTML
+    - XDS_AddParam
+
+target:
+  primary_selector: >
+    //public[count(.//@value[custom:RegExMatch(.,$Pattern)]) > 0 or
+    count(.//@get[custom:RegExMatch(.,$Pattern)]) > 0 or
+    count(.//external[custom:RegExMatch(@path,$Pattern)]) > 0]
+    |
+    //private[count(.//@value[custom:RegExMatch(.,$Pattern)]) > 0 or
+    count(.//@get[custom:RegExMatch(.,$Pattern)]) > 0 or
+    count(.//external[custom:RegExMatch(@path,$Pattern)]) > 0]
+  inspected_selectors:
+    - >
+        //public[count(.//@value[custom:RegExMatch(.,$Pattern)]) > 0 or count(.//@get[custom:RegExMatch(.,$Pattern)]) > 0 or count(.//external[custom:RegExMatch(@path,$Pattern)]) > 0]
+        |
+        //private[count(.//@value[custom:RegExMatch(.,$Pattern)]) > 0 or count(.//@get[custom:RegExMatch(.,$Pattern)]) > 0 or count(.//external[custom:RegExMatch(@path,$Pattern)]) > 0]
+    - >
+        .//*[custom:RegExMatch(@value,$Pattern) or custom:RegExMatch(@get,$Pattern) or (local-name()='external' and custom:RegExMatch(@path,$Pattern))]
+    - >
+        @id
+    - >
+        local-name()
+    - >
+        $FieldID
+    - >
+        local-name(..)
+    - >
+        local-name(../..)
+    - >
+        @get
+    - >
+        @path
+    - >
+        @value
+    - >
+        $Pattern
+    - >
+        msxsl:node-set($Content)/param
+    - >
+        @paramType
+    - >
+        @paramValue
+    - >
+        @fieldName
+
+condition:
+  type: deterministic_xpath_double_slash_scan
+  rule: >
+    Find occurrences of the source XSL Pattern in descendant value/get
+    attributes and external/@path attributes belonging to public and private
+    fields. The pattern detects // that is not immediately preceded by ':' and
+    is not followed by the excluded //*[@id= form.
+  pattern:
+    source_regex: '(?<!:)//(?!\*[@id=)'
+    semantics:
+      detect: >
+        A double slash occurrence that is not preceded by a colon.
+      exclude:
+        - >
+          Occurrences immediately preceded by ':' so URLs such as http:// are
+          not reported.
+        - >
+          The //*[@id= form explicitly excluded by the source Pattern.
+  candidate_fields:
+    - public
+    - private
+  scanned_attributes:
+    - >
+        descendant attributes named value
+    - >
+        descendant attributes named get
+    - >
+        descendant external elements' path attributes
+  parameter_mapping:
+    request:
+      condition: local-name()='request'
+      paramType: >
+        local-name(..) + ' response path'
+      paramValue: '@get'
+    options_request_paths:
+      condition: >
+        local-name()='responsePath' or local-name()='captionPath' or local-name()='valuePath'
+      paramType: >
+        local-name(../..) + ' ' + local-name()
+      paramValue: '@value'
+    request_parameters:
+      condition: local-name()='nameValue'
+      paramType: 'request parameters'
+      paramValue: '@value'
+    iterator_custom_query:
+      condition: local-name()='customQuery'
+      paramType: >
+        local-name(../..) + ' ' + local-name() + ' advanced query'
+      paramValue: '@value'
+    external:
+      condition: local-name()='external'
+      paramType: >
+        local-name(..) + ' external data path'
+      paramValue: '@path'
+    hard_coded:
+      condition: >
+        local-name()='value' or local-name()='default'
+      paramType: local-name()
+      paramValue: '@value'
+    calculation_argument:
+      condition: local-name()='argument'
+      paramType: >
+        local-name(../..) + ' ' + local-name(..) + ' ' + local-name()
+      paramValue: '@value'
+    otherwise:
+      paramType: '&nbsp;'
+      paramValue: '@value'
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: XDS
+      handling: >
+        Candidate field exclusions are resolved from the current AgentRules
+        exclusion configuration after parameter generation.
+    legacy:
+      custom_expression: >
+        not(@fieldName = msxsl:node-set($CustomExclusions)/module[@id='XDS']/field/@id)
+      base_expression: >
+        not(@fieldName = msxsl:node-set($BaseExclusions)/module[@id='XDS']/field/@id)
+      handling: >
+        The legacy expressions are retained for traceability only.
+
+validation_procedure:
+  type: powershell_xml_regex_parameter_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the XDS XSL's regex-based discovery of double-slash XPath
+    patterns, parameter classification, parameter values, field exclusions,
+    and final sorting.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $pattern = '(?<!:)//(?!\*[@id=)'
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    $fields = $xml.SelectNodes(
+        "//*[local-name()='public' or local-name()='private']"
+    )
+
+    foreach ($field in $fields) {
+        $fieldID = $field.GetAttribute("id")
+
+        $matchingNodes = $field.SelectNodes(
+            ".//*[local-name()='*']"
+        )
+
+        foreach ($node in $field.SelectNodes(".//*")) {
+            $matched = $false
+
+            foreach ($attribute in $node.Attributes) {
+                if (
+                    $attribute.Name -eq "value" -or
+                    $attribute.Name -eq "get"
+                ) {
+                    if ([regex]::IsMatch($attribute.Value, $pattern)) {
+                        $matched = $true
+                    }
+                }
+            }
+
+            if (
+                $node.LocalName -eq "external" -and
+                $node.HasAttribute("path") -and
+                [regex]::IsMatch($node.GetAttribute("path"), $pattern)
+            ) {
+                $matched = $true
+            }
+
+            if (-not $matched) {
+                continue
+            }
+
+            $paramType = "&nbsp;"
+            $paramValue = ""
+
+            switch ($node.LocalName) {
+                "request" {
+                    $parent = $node.ParentNode
+                    if ($parent) {
+                        $paramType = $parent.LocalName + " response path"
+                    }
+                    $paramValue = $node.GetAttribute("get")
+                }
+
+                "responsePath" {
+                    $grandParent = $node.ParentNode.ParentNode
+                    $prefix = ""
+                    if ($grandParent) {
+                        $prefix = $grandParent.LocalName
+                    }
+                    $paramType = $prefix + " " + $node.LocalName
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "captionPath" {
+                    $grandParent = $node.ParentNode.ParentNode
+                    $prefix = ""
+                    if ($grandParent) {
+                        $prefix = $grandParent.LocalName
+                    }
+                    $paramType = $prefix + " " + $node.LocalName
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "valuePath" {
+                    $grandParent = $node.ParentNode.ParentNode
+                    $prefix = ""
+                    if ($grandParent) {
+                        $prefix = $grandParent.LocalName
+                    }
+                    $paramType = $prefix + " " + $node.LocalName
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "nameValue" {
+                    $paramType = "request parameters"
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "customQuery" {
+                    $grandParent = $node.ParentNode.ParentNode
+                    $parent = $node.ParentNode
+                    $prefix = ""
+                    $parentName = ""
+
+                    if ($grandParent) {
+                        $prefix = $grandParent.LocalName
+                    }
+                    if ($parent) {
+                        $parentName = $parent.LocalName
+                    }
+
+                    $paramType =
+                        $prefix + " " +
+                        $parentName + " " +
+                        $node.LocalName +
+                        " advanced query"
+
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "external" {
+                    $parent = $node.ParentNode
+                    if ($parent) {
+                        $paramType = $parent.LocalName + " external data path"
+                    }
+                    $paramValue = $node.GetAttribute("path")
+                }
+
+                "value" {
+                    $paramType = $node.LocalName
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "default" {
+                    $paramType = $node.LocalName
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                "argument" {
+                    $grandParent = $node.ParentNode.ParentNode
+                    $parent = $node.ParentNode
+                    $prefix = ""
+                    $parentName = ""
+
+                    if ($grandParent) {
+                        $prefix = $grandParent.LocalName
+                    }
+                    if ($parent) {
+                        $parentName = $parent.LocalName
+                    }
+
+                    $paramType =
+                        $prefix + " " +
+                        $parentName + " " +
+                        $node.LocalName
+
+                    $paramValue = $node.GetAttribute("value")
+                }
+
+                default {
+                    $paramType = "&nbsp;"
+                    $paramValue = $node.GetAttribute("value")
+                }
+            }
+
+            [void]$results.Add(
+                [PSCustomObject]@{
+                    fieldName  = $fieldID
+                    paramType  = $paramType
+                    paramValue = $paramValue
+                }
+            )
+        }
+    }
+
+    $results |
+        Sort-Object paramType, paramValue, fieldName |
+        ForEach-Object {
+            $_
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its
+      semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport,
+      quoting, escaping, and result collection required to execute the
+      command_template safely.
+    - >
+      The regex must preserve the source intent of excluding URL-style //
+      preceded by ':' and excluding //*[@id=.
+    - >
+      A result is generated for each matching descendant element, not merely
+      once per field.
+    - >
+      Parameter classification must follow the source XSL local-name branches.
+    - >
+      Current AgentRules field exclusions are applied to generated results
+      before reporting.
+    - >
+      Results must be sorted by paramType, then paramValue, then fieldName.
+    - >
+      A transport or invocation failure must be retried through permitted
+      runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - fieldName
+    - paramType
+    - paramValue
+  multiplicity: >
+    One result per matching descendant element that produces an XDS parameter
+    row after field-level exclusions.
+  sorting:
+    - paramType
+    - paramValue
+    - fieldName
+  result_gate: >
+    Report only generated parameters whose fieldName is not excluded by the
+    authoritative current XDS exclusion configuration.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - fieldName
+    - paramType
+    - paramValue
+
+expected:
+  pass: >
+    No non-excluded public or private field parameter contains a matching
+    double-slash XPath pattern.
+  violation: >
+    A non-excluded field contains a value, get, or external path containing a
+    double-slash XPath pattern identified by the source regex.
+
+violation:
+  title: 'XPath Double Slash'
+  message: >
+    Field '{fieldName}' contains a double-slash XPath pattern in
+    '{paramType}': {paramValue}.
+  severity: Performance
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //public[count(.//@value[custom:RegExMatch(.,$Pattern)]) >0 or count(.//@get[custom:RegExMatch(.,$Pattern)]) >0 or count(.//external[custom:RegExMatch(@path,$Pattern)]) >0]
+        |
+        //private[count(.//@value[custom:RegExMatch(.,$Pattern)]) >0 or count(.//@get[custom:RegExMatch(.,$Pattern)]) >0 or count(.//external[custom:RegExMatch(@path,$Pattern)]) >0]
+    - >
+        .//*[custom:RegExMatch(@value,$Pattern) or custom:RegExMatch(@get,$Pattern) or (local-name()='external' and custom:RegExMatch(@path,$Pattern))]
+    - >
+        @id
+    - >
+        local-name()
+    - >
+        local-name(..)
+    - >
+        local-name(../..)
+    - >
+        @get
+    - >
+        @path
+    - >
+        @value
+    - >
+        msxsl:node-set($Content)/param[not(@fieldName = msxsl:node-set($CustomExclusions)/module[@id='XDS']/field/@id) and not(@fieldName = msxsl:node-set($BaseExclusions)/module[@id='XDS']/field/@id)]
+    - >
+        @paramType
+    - >
+        @paramValue
+    - >
+        @fieldName
+
+notes:
+  - >
+    The source Pattern is `(?<!:)//(?!\*[@id=)`, excluding URL-like occurrences
+    such as http:// and the explicitly excluded //*[@id= form.
+  - >
+    The source scans value and get attributes on descendant nodes and path
+    attributes on external elements.
+  - >
+    A field may produce multiple rows when multiple parameters contain a
+    matching double slash.
+  - >
+    The source sorts generated rows by paramType, paramValue, and fieldName.
+  - >
+    Current AgentRules exclusions are authoritative; legacy CustomExclusions
+    and BaseExclusions are retained for traceability.

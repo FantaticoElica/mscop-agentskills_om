@@ -1,0 +1,357 @@
+﻿```yaml
+id: BIF
+name: 'Big Int Fields'
+category: 'Error'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This module identifies int values which should be defined as big int in case
+  they hold large values. These values need to be reviewed and replaced with
+  either string or float depending on the use case. Found IDs which in some
+  cases might overflow beyond the limit of integer. Please review and update
+  the IDs in case they are at a risk of crossing the integer threshold.
+
+source:
+  file: files/source/MsCop/BigIntFields.xsl
+  module_id: BIF
+  templates:
+    - BigIntFields
+    - BIF_XML
+    - BIF_HTML
+    - BIF_Data
+    - BIF_ById
+    - BIF_DataOLD
+    - BIF_AddRow_XML
+    - BIF_AddRow_HTML
+
+target:
+  primary_selector: >
+    //public[@type='int'] | //private[@type='int']
+
+  inspected_selectors:
+    - >
+        //public[@type='int'] | //private[@type='int']
+    - >
+        //reference[@type='int'] | //operand[@type='int']
+    - >
+        //iterator[@type='int']
+    - >
+        //operand[../@compare='lt' or ../@compare='gt' and @idref]
+    - >
+        'HistoryID'
+    - >
+        'abcdefghijklmnopqrstuvwxyz'
+    - >
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    - >
+        msxsl:node-set($vars)/var
+    - >
+        .
+    - >
+        $mainlist[contains(translate(@id,$sc,$uc),translate($matchId,$sc,$uc))]
+    - >
+        $referencelist[contains(translate(@idref,$sc,$uc),translate($matchId,$sc,$uc))]
+    - >
+        $iterator[reference[contains(translate(@idref,$sc,$uc),translate($matchId,$sc,$uc))]]
+    - >
+        $mainlist[
+          value/iterator[
+            @type='int'
+            and reference[
+              contains(
+                translate(@idref,$sc,$uc),
+                translate($matchId,$sc,$uc)
+              )
+            ]
+          ]
+          and not(
+            contains(
+              translate(@id,$sc,$uc),
+              translate($matchId,$sc,$uc)
+            )
+          )
+        ]
+    - >
+        $comparisonoperand[
+          not(
+            contains(
+              translate(@idref,$sc,$uc),
+              translate($matchId,$sc,$uc)
+            )
+          )
+          and contains(@type,'int')
+          and ../operand[
+            contains(
+              translate(@idref,$sc,$uc),
+              translate($matchId,$sc,$uc)
+            )
+            and contains(@type,'int')
+          ]
+        ]
+    - >
+        $MainFieldSearch
+        | $ReferenceFieldSearch
+        | $IteratorSearch
+        | $IteratorParentSearch
+        | $ComparisonOperatorSearch
+    - >
+        @id
+    - >
+        $list[contains(@id,$matchId) and contains(@type,'int')]
+    - >
+        local-name()
+    - >
+        @idref
+    - >
+        @type
+
+condition:
+  type: big_int_field
+  rule:
+    - >
+      Consider public and private XML elements whose @type attribute is
+      exactly 'int'.
+    - >
+      Such elements are candidates for the Big Int Fields rule.
+    - >
+      Candidate-level exclusions are evaluated through
+      AgentRules/Exclusions.yaml before confirming a violation.
+
+exclusions:
+  - >
+    Candidate-level exclusions are evaluated only through the current
+    repository-wide exclusion configuration:
+    AgentRules/Exclusions.yaml.
+
+  - >
+    The current BIF candidate-level exclusion configuration contains no
+    configured exclusions unless an entry is explicitly present for BIF
+    in AgentRules/Exclusions.yaml.
+
+  - >
+    CustomExclusions and BaseExclusions from the original MSCop XSL are
+    historical/original rule semantics and are not current runtime
+    exclusion sources for this AgentRule.
+
+  - >
+    Do not search for, reconstruct, or apply CustomExclusions or
+    BaseExclusions as a separate runtime exclusion mechanism.
+
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic BIF XML validation against each applicable
+    XML file in the supplied application.
+
+  xpath: >
+    //public[@type='int'] | //private[@type='int']
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath
+    "//public[@type='int'] | //private[@type='int']"
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its XPath semantics.
+    - >
+      Treat the command output as the candidate set for this rule.
+    - >
+      Do not replace the deterministic validation procedure with an
+      independently implemented XPath, regex, XML parser, LLM inspection,
+      or alternate validator.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      Nodes returned by the validation XPath are candidates for the
+      Big Int Fields rule.
+
+    confirmed_violation_requires:
+      - >
+        The matched node is a public or private XML element.
+      - >
+        The matched node has @type exactly equal to 'int'.
+      - >
+        Any applicable candidate-level exclusions defined in
+        AgentRules/Exclusions.yaml have been evaluated.
+      - >
+        The candidate is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The Select-Xml result is a candidate set, not by itself a confirmed
+        violation.
+      - >
+        After candidate generation, evaluate the candidate against
+        AgentRules/Exclusions.yaml.
+      - >
+        CustomExclusions and BaseExclusions are part of the original MSCop
+        XSL semantics for traceability only. They are not current runtime
+        exclusion sources for this AgentRule.
+      - >
+        Do not search for, reconstruct, or apply CustomExclusions or
+        BaseExclusions during current execution.
+      - >
+        Do not use the validation XPath as a substitute for the complete
+        current AgentRule execution flow.
+      - >
+        Do not introduce additional type, visibility, field-name,
+        reference, iterator, or value conditions that are not part of
+        the current executable BIF validation procedure.
+
+evidence:
+  required:
+    - file
+    - location
+    - field_id
+    - field_type
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+    include_field_id: true
+
+expected:
+  condition: >
+    Public and private fields defined with @type='int' are identified for
+    Big Int Fields review unless excluded by an applicable entry in
+    AgentRules/Exclusions.yaml.
+
+violation:
+  when: >
+    A public or private XML element has @type exactly equal to 'int',
+    is not excluded by an applicable entry in AgentRules/Exclusions.yaml,
+    and is confirmed against the current application filesystem.
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //public[@type='int'] | //private[@type='int']
+    - >
+        //reference[@type='int'] | //operand[@type='int']
+    - >
+        //iterator[@type='int']
+    - >
+        //operand[../@compare='lt' or ../@compare='gt' and @idref]
+    - >
+        'HistoryID'
+    - >
+        'abcdefghijklmnopqrstuvwxyz'
+    - >
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    - >
+        msxsl:node-set($vars)/var
+    - >
+        .
+    - >
+        $mainlist[contains(translate(@id,$sc,$uc),translate($matchId,$sc,$uc))]
+    - >
+        $referencelist[contains(translate(@idref,$sc,$uc),translate($matchId,$sc,$uc))]
+    - >
+        $iterator[reference[contains(translate(@idref,$sc,$uc),translate($matchId,$sc,$uc))]]
+    - >
+        $mainlist[
+          value/iterator[
+            @type='int'
+            and reference[
+              contains(
+                translate(@idref,$sc,$uc),
+                translate($matchId,$sc,$uc)
+              )
+            ]
+          ]
+          and not(
+            contains(
+              translate(@id,$sc,$uc),
+              translate($matchId,$sc,$uc)
+            )
+          )
+        ]
+    - >
+        $comparisonoperand[
+          not(
+            contains(
+              translate(@idref,$sc,$uc),
+              translate($matchId,$sc,$uc)
+            )
+          )
+          and contains(@type,'int')
+          and ../operand[
+            contains(
+              translate(@idref,$sc,$uc),
+              translate($matchId,$sc,$uc)
+            )
+            and contains(@type,'int')
+          ]
+        ]
+    - >
+        $MainFieldSearch
+        | $ReferenceFieldSearch
+        | $IteratorSearch
+        | $IteratorParentSearch
+        | $ComparisonOperatorSearch
+    - >
+        @id
+    - >
+        $list[contains(@id,$matchId) and contains(@type,'int')]
+    - >
+        local-name()
+    - >
+        @idref
+    - >
+        @type
+
+notes:
+  - >
+    The original XSL contains multiple selectors and search expressions
+    used by the legacy Big Int Fields implementation. These are retained
+    in original_logic and inspected_selectors for traceability.
+
+  - >
+    The deterministic Select-Xml validation identifies the structural
+    BIF candidate set using the primary selector. Candidate-level
+    exclusion evaluation is performed using AgentRules/Exclusions.yaml
+    before reporting a confirmed violation.
+
+  - >
+    CustomExclusions and BaseExclusions are retained in original_logic
+    for traceability to the legacy XSL only and are not runtime
+    exclusion sources for the current AgentRule.
+
+  - >
+    The validation XPath must remain semantically aligned with the
+    executable BIF rule and must not introduce additional XML conditions
+    that are not defined by the AgentRule.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.
+```

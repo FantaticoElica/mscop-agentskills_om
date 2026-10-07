@@ -1,0 +1,387 @@
+﻿id: LUD
+name: 'Incomplete Lookup Details'
+category: 'Error'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This table lists fields that defined a lookup, but have not completed all of
+  the parameters needed to make the lookup work. These fields will likely crash
+  if executed.
+
+source:
+  file: files/source/MsCop/LookupDetails.xsl
+  module_id: LUD
+  templates:
+    - LookupDetails
+    - LUD_XML
+    - LUD_HTML
+    - LUD_Data
+    - LUD_AddRow_XML
+    - LUD_AddRow_HTML
+    - LUD_addLookupItem
+
+target:
+  primary_selector: >
+    model/object//*[
+      (local-name()='public' or local-name()='private')
+      and .//lookup[
+        tableRef/@value=''
+        or fieldRef/@value=''
+        or (
+          tableRef/@value='(custom defined)'
+          and (tableRef/@idref='' or not(tableRef/@idref))
+        )
+        or (
+          not(keyRef/@value)
+          and not(keyRef/@idref)
+          and not(
+            ancestor::table[
+              @id = current()/tableRef/@value
+              and rowKeys/@name='rowIndex'
+            ]
+          )
+        )
+        or (keyRef/@value and keyRef/@value='')
+        or (keyRef/@idref and keyRef/@idref='')
+      ]
+    ]
+  inspected_selectors:
+    - >
+      model/object//*[
+        (local-name()='public' or local-name()='private')
+        and .//lookup
+      ]
+    - >
+      .//lookup
+    - >
+      tableRef/@value
+    - >
+      fieldRef/@value
+    - >
+      tableRef/@idref
+    - >
+      keyRef/@value
+    - >
+      keyRef/@idref
+    - >
+      @id
+    - >
+      @parameter
+    - >
+      local-name(..)
+  scope: per_xml_file
+
+condition:
+  type: lookup_parameter_completeness
+  rule: >
+    A lookup is incomplete when any required lookup parameter is missing or
+    empty, subject to the source XSL exception for conditional tables whose
+    rowKeys element has name="rowIndex".
+  checks:
+    table_reference:
+      violation_when:
+        - >
+          tableRef/@value is empty.
+        - >
+          fieldRef/@value is empty.
+    custom_defined_table:
+      violation_when: >
+        tableRef/@value is "(custom defined)" and tableRef/@idref is empty or
+        absent.
+    key_reference:
+      violation_when:
+        - >
+          keyRef is absent.
+        - >
+          keyRef exists but neither @value nor @idref is present.
+        - >
+          keyRef/@value exists but is empty.
+        - >
+          keyRef/@idref exists but is empty.
+      exception: >
+        A missing keyRef is allowed when the referenced table has a rowKeys
+        child with @name="rowIndex", identifying a conditional table.
+  field_scope:
+    public:
+      field_id_source: ../../../@id
+    private:
+      field_id_source: ../../@id
+    ignore_lookup_else:
+      private:
+        field_id_source: ../../../../@id
+      public:
+        field_id_source: ../../../../../@id
+  scope: per_xml_file
+  content_inspection: >
+    The validator inspects only the lookup attributes and referenced table
+    structure required by the source XSL. It does not infer lookup validity from
+    unrelated elements.
+
+exclusions:
+  - >
+    Candidate-level field exclusions are resolved from the current
+    AgentRules/Exclusions.yaml configuration for module LUD.
+  - >
+    The original XSL applies CustomExclusions and BaseExclusions to the
+    enclosing public/private field ID before processing its lookup children.
+  - >
+    Exclusions are therefore applied to the resolved field ID associated with
+    each lookup, including the special Ignore Lookup ("else") field-ID paths
+    defined by LUD_addLookupItem.
+
+validation_procedure:
+  type: powershell_xml_lookup_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    per_file: true
+  purpose: >
+    Parse each applicable XML file and identify incomplete lookup definitions
+    using the same missing table, field, custom-defined table, and key-reference
+    conditions implemented by the source XSL, including the conditional-table
+    rowIndex exception and the source field-ID resolution rules.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $tables = @(
+        $xml.SelectNodes("//table") |
+            Sort-Object { $_.GetAttribute("id") }
+    )
+
+    $results = @()
+
+    foreach ($field in $xml.SelectNodes("model/object//*[(local-name()='public' or local-name()='private')]")) {
+        $fieldScope = $field.LocalName
+        $fieldID = $field.GetAttribute("id")
+
+        foreach ($lookup in $field.SelectNodes(".//lookup")) {
+            $invalid = $false
+
+            $tableValue = $null
+            $fieldValue = $null
+            $tableIDRef = $null
+            $keyValue = $null
+            $keyIDRef = $null
+
+            $tableRef = $lookup.SelectSingleNode("tableRef")
+            $fieldRef = $lookup.SelectSingleNode("fieldRef")
+            $keyRef = $lookup.SelectSingleNode("keyRef")
+
+            if ($null -ne $tableRef) {
+                $tableValue = $tableRef.GetAttribute("value")
+                $tableIDRef = $tableRef.GetAttribute("idref")
+            }
+
+            if ($null -ne $fieldRef) {
+                $fieldValue = $fieldRef.GetAttribute("value")
+            }
+
+            if ($null -ne $keyRef) {
+                $keyValue = $keyRef.GetAttribute("value")
+                $keyIDRef = $keyRef.GetAttribute("idref")
+            }
+
+            if ($null -eq $tableRef -or [string]::IsNullOrEmpty($tableValue)) {
+                $invalid = $true
+            }
+
+            if ($null -eq $fieldRef -or [string]::IsNullOrEmpty($fieldValue)) {
+                $invalid = $true
+            }
+
+            if ($tableValue -eq "(custom defined)" -and
+                ([string]::IsNullOrEmpty($tableIDRef) -or $null -eq $tableRef.Attributes["idref"])) {
+                $invalid = $true
+            }
+
+            if ($null -eq $keyRef) {
+                $tableName = $tableValue
+                $conditionalTable = $false
+
+                if (-not [string]::IsNullOrEmpty($tableName)) {
+                    $referencedTable = $tables |
+                        Where-Object { $_.GetAttribute("id") -eq $tableName } |
+                        Select-Object -First 1
+
+                    if ($null -ne $referencedTable -and
+                        $null -ne $referencedTable.SelectSingleNode("rowKeys[@name='rowIndex']")) {
+                        $conditionalTable = $true
+                    }
+                }
+
+                if (-not $conditionalTable) {
+                    $invalid = $true
+                }
+            }
+            elseif ($null -ne $keyRef) {
+                $hasValueAttribute = $null -ne $keyRef.Attributes["value"]
+                $hasIDRefAttribute = $null -ne $keyRef.Attributes["idref"]
+
+                if (
+                    (-not $hasValueAttribute -and -not $hasIDRefAttribute) -or
+                    ($hasValueAttribute -and [string]::IsNullOrEmpty($keyValue)) -or
+                    ($hasIDRefAttribute -and [string]::IsNullOrEmpty($keyIDRef))
+                ) {
+                    $invalid = $true
+                }
+            }
+
+            if ($invalid) {
+                $parameter = $lookup.ParentNode.LocalName
+                $resolvedFieldID = $fieldID
+
+                if ($parameter -eq "else") {
+                    if ($fieldScope -eq "private") {
+                        $resolvedFieldID = $field.ParentNode.ParentNode.ParentNode.ParentNode.GetAttribute("id")
+                    }
+                    elseif ($fieldScope -eq "public") {
+                        $resolvedFieldID = $field.ParentNode.ParentNode.ParentNode.ParentNode.ParentNode.GetAttribute("id")
+                    }
+                }
+
+                $results += [PSCustomObject]@{
+                    FieldID     = $resolvedFieldID
+                    Parameter   = $parameter
+                    FieldScope  = $fieldScope
+                    Lookup      = $lookup
+                }
+            }
+        }
+    }
+
+    $results |
+        Sort-Object Parameter, FieldID |
+        Select-Object FieldID, Parameter, FieldScope
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of LUD validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Candidate exclusions must be applied according to the current
+      AgentRules/Exclusions.yaml configuration using the resolved field ID.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Do not infer violations from filenames, folder names, or non-XML metadata.
+    - >
+      The conditional-table rowIndex exception must be preserved.
+    - >
+      The special field-ID resolution for Ignore Lookup ("else") must be
+      preserved.
+  result:
+    candidate_fields:
+      - FieldID
+      - Parameter
+      - FieldScope
+  interpretation:
+    violation_when: >
+      A lookup fails one or more of the source XSL completeness checks and is
+      not associated with an allowed conditional table.
+    no_violation_when: >
+      No incomplete lookup remains after the configured LUD field exclusions
+      are applied.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an LUD violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the deterministic command_template
+      identifies the lookup as incomplete according to the source XSL logic.
+    - >
+      Conditional tables with rowKeys/@name="rowIndex" are not reported solely
+      because they lack keyRef.
+    - >
+      Excluded fields are not reported as confirmed violations.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - field_id
+    - parameter
+    - field_scope
+
+expected:
+  condition: >
+    Every lookup should contain the required table, field, and key information,
+    except for conditional tables identified by rowKeys/@name="rowIndex".
+
+violation:
+  message: >
+    Lookup has incomplete details and may fail when executed.
+  checks:
+    - 'Missing or empty tableRef/@value'
+    - 'Missing or empty fieldRef/@value'
+    - 'Custom-defined table missing tableRef/@idref'
+    - 'Missing keyRef when the referenced table is not conditional'
+    - 'Empty keyRef/@value'
+    - 'Empty keyRef/@idref'
+
+original_logic:
+  exact_select_expressions:
+    - >
+      //table
+    - >
+      @id
+    - >
+      .
+    - >
+      model/object//*[(local-name() = 'public' or local-name() = 'private') and .//lookup[tableRef/@value='' or fieldRef/@value='' or (tableRef/@value='(custom defined)' and (tableRef/@idref='' or not(tableRef/@idref))) or (keyRef and (keyRef/@name='' or not(keyRef/@name))) or not(keyRef)] and not(@id = msxsl:node-set($CustomExclusions)/module[@id='LUD']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='LUD']/field/@id)]
+    - >
+      .//lookup
+    - >
+      tableRef/@value
+    - >
+      msxsl:node-set($lookupItems)/lookup
+    - >
+      @parameter
+  lookup_checks:
+    - >
+      tableRef/@value='' or fieldRef/@value=''
+    - >
+      tableRef/@value='(custom defined)' and (tableRef/@idref='' or not(tableRef/@idref))
+    - >
+      not(keyRef/@value) and not(keyRef/@idref), except when the referenced
+      table has rowKeys/@name='rowIndex'
+    - >
+      keyRef/@value and keyRef/@value=''
+    - >
+      keyRef/@idref and keyRef/@idref=''
+  sorting:
+    - '@parameter'
+    - '@id'
+  output_fields:
+    - fieldID
+    - paramType
+  field_id_resolution:
+    private_ignore_lookup: '../../../../@id'
+    public_ignore_lookup: '../../../../../@id'
+    public: '../../../@id'
+    private: '../../@id'
+
+notes:
+  - >
+    The source XSL first builds a sorted table collection from all //table
+    elements to identify conditional tables.
+  - >
+    Lookups with missing table or field information are always added to the
+    lookupItems collection.
+  - >
+    Custom-defined tables require tableRef/@idref.
+  - >
+    A missing keyRef is allowed only when the referenced table contains
+    rowKeys/@name="rowIndex".
+  - >
+    The source XSL performs the final output ordering by parameter and then ID.
+  - >
+    The source XML output reports the resolved field ID as fieldID and the
+    lookup parameter as paramType.

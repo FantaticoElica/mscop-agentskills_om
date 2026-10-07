@@ -1,0 +1,374 @@
+﻿id: HCV
+name: Hard-coded Values
+category: Standards
+status: READY
+validation: VALIDATED
+
+description: >
+Report one finding for each exact hard-coded value parameter emitted by the
+original XSL for a non-excluded public field.
+
+source:
+file: files/source/MsCop/HardCodedValues.xsl
+module_id: HCV
+templates:
+- HardCodedValues
+- HCV_XML
+- HCV_Data
+- HCV_AddParam
+- HCV_AddRow_XML
+- HCV_AddRow_HTML
+
+target:
+element: public
+selector: //public
+scope: single_xml_document
+field_identifier: "*@id*"
+
+condition:
+type: emitted_parameter
+
+candidate: >
+The public field has at least one of definition/formatMask/@value,
+definition/maxLength/@value, definition/applicable/@value,
+definition/required/@value, or definition/readOnly/@value.
+
+parameters:
+- name: Format Mask
+source: definition/formatMask/@value
+
+```
+- name: Max Length
+  source: definition/maxLength/@value
+
+- name: Applicable
+  source: definition/applicable/@value
+
+- name: Required
+  source: definition/required/@value
+
+- name: Read Only
+  source: definition/readOnly/@value
+```
+
+violation: >
+Emit one finding for each listed parameter whose @value attribute exists.
+Parameter values are the exact attribute strings; an empty existing value
+is still an emitted parameter because the XSL tests node presence.
+
+multiplicity: one finding per present parameter, not one finding per field
+
+sorting:
+source_fields: "*@id* ascending while constructing Content"
+reported_items:
+- "*@paramValue* ascending"
+- "@paramName ascending"
+- "@fieldID ascending"
+
+exclusions:
+candidate_level:
+enabled: true
+source: AgentRules/Exclusions.yaml
+matching:
+target_type: field
+identifier: field_id
+comparison: exact
+case_sensitive: true
+whitespace_sensitive: true
+normalization: none
+behavior: >
+Candidate-level exclusions are evaluated only after deterministic HCV
+candidates have been produced. A candidate is excluded only when the
+applicable HCV exclusion rule in AgentRules/Exclusions.yaml explicitly
+matches its field identifier.
+configured_exclusions: >
+No HCV candidate-level exclusions are configured unless an explicit HCV
+entry exists in AgentRules/Exclusions.yaml.
+legacy:
+CustomExclusions:
+module: HCV
+status: traceability_only
+runtime: false
+BaseExclusions:
+module: HCV
+status: traceability_only
+runtime: false
+restrictions:
+- Do not search for or reconstruct CustomExclusions at runtime.
+- Do not search for or reconstruct BaseExclusions at runtime.
+- Do not introduce any additional exclusion source.
+- Do not modify the deterministic HCV candidate-generation logic because of
+historical exclusion mechanisms.
+- AgentRules/Exclusions.yaml is the only repository-wide candidate-level
+exclusion source.
+
+comparison:
+parameter_presence: XML attribute node existence
+value: exact source @value string; no case folding, trimming, or normalization
+field_identity: exact @id string
+
+expected:
+condition: >
+Only the five named public-field parameters with an existing @value are
+emitted, subject to configured candidate-level exclusions.
+
+violation:
+when: >
+A public field contains one of the five parameter @value attributes and
+the resulting candidate is not excluded by AgentRules/Exclusions.yaml.
+
+validation_procedure:
+type: powershell_xml_parameter_scan
+
+execution_mode: direct_command_template
+
+purpose: >
+Deterministically reproduce the parameter-emission behavior of the original
+HCV XSL against the current XML file.
+
+command_template: |
+[xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+```
+$results = [System.Collections.Generic.List[object]]::new()
+
+$nodes = $xml.SelectNodes("//public")
+
+$parameters = @(
+    @{
+        Name = "Format Mask"
+        XPath = "./definition/formatMask"
+    },
+    @{
+        Name = "Max Length"
+        XPath = "./definition/maxLength"
+    },
+    @{
+        Name = "Applicable"
+        XPath = "./definition/applicable"
+    },
+    @{
+        Name = "Required"
+        XPath = "./definition/required"
+    },
+    @{
+        Name = "Read Only"
+        XPath = "./definition/readOnly"
+    }
+)
+
+$sortedNodes = @(
+    $nodes |
+    Sort-Object {
+        $_.GetAttribute("id")
+    }
+)
+
+foreach ($node in $sortedNodes) {
+
+    $fieldID = $node.GetAttribute("id")
+
+    foreach ($parameter in $parameters) {
+
+        $parameterNode = $node.SelectSingleNode(
+            "$($parameter.XPath)[@value]"
+        )
+
+        if ($null -eq $parameterNode) {
+            continue
+        }
+
+        $paramValue = $parameterNode.GetAttribute("value")
+
+        $results.Add(
+            [PSCustomObject]@{
+                FieldID      = $fieldID
+                ParamName    = $parameter.Name
+                ParamValue   = $paramValue
+                Location     = "$($parameter.XPath)/@value"
+            }
+        )
+    }
+}
+
+$results |
+    Sort-Object `
+        @{ Expression = { $_.ParamValue }; Ascending = $true },
+        @{ Expression = { $_.ParamName }; Ascending = $true },
+        @{ Expression = { $_.FieldID }; Ascending = $true }
+```
+
+execution_constraints:
+- The command_template is the authoritative deterministic HCV validation procedure.
+- Execute the command_template directly for each applicable XML file.
+- Replace only the <XML_FILE> placeholder with the current XML file path.
+- Do not rewrite the command into an alternative validation implementation.
+- Do not replace the PowerShell command with LLM-based XML inspection.
+- Do not create or depend on a separate generated validator script.
+- Do not create or depend on a separate wrapper script for the validation semantics.
+- A runtime wrapper may only be used by the execution environment to iterate over
+files and collect command output; it must not modify the command semantics.
+- Do not modify the XPath, parameter definitions, attribute-presence test,
+parameter names, value extraction, or sorting behavior.
+- The command must operate on the current user-supplied application filesystem.
+- The command output is the deterministic HCV candidate set for that XML file.
+
+candidate_identity:
+field_id: FieldID
+parameter_name: ParamName
+parameter_value: ParamValue
+location: Location
+
+candidate_multiplicity: >
+One candidate is produced for every listed parameter whose source XML
+element contains an existing @value attribute. Multiple parameters on the
+same public field therefore produce multiple candidates.
+
+evidence:
+required:
+- file
+- location
+- field_id
+- parameter_name
+- parameter_value
+- exclusion_status
+
+verification:
+source_of_truth: current_application_filesystem
+requirements:
+- Verify the XML file still exists at the supplied application path.
+- Verify the source public field exists in the current XML.
+- Verify the exact parameter element exists.
+- Verify the @value attribute exists.
+- Verify the reported parameter value exactly matches the current @value string.
+- Verify the candidate has not been excluded by AgentRules/Exclusions.yaml.
+- Do not alter, trim, normalize, or reinterpret the parameter value.
+
+report:
+candidate_identifier: field_id
+include_field_id: true
+include_parameter_name: false
+include_parameter_value: false
+include_location: false
+include_exclusion_status: false
+
+original_logic:
+candidate_selector: >
+//public[(definition/formatMask/@value or definition/maxLength/@value or
+definition/required/@value or definition/applicable/@value or
+definition/readOnly/@value) and exclusions]
+
+emitted_parameters:
+- if: definition/formatMask/@value
+name: Format Mask
+value: definition/formatMask/@value
+
+```
+- if: definition/maxLength/@value
+  name: Max Length
+  value: definition/maxLength/@value
+
+- if: definition/applicable/@value
+  name: Applicable
+  value: definition/applicable/@value
+
+- if: definition/required/@value
+  name: Required
+  value: definition/required/@value
+
+- if: definition/readOnly/@value
+  name: Read Only
+  value: definition/readOnly/@value
+```
+
+final_sort:
+- "*@paramValue*"
+- "*@paramName*"
+- "*@fieldID*"
+
+exclusions:
+- type: CustomExclusions
+module: HCV
+match: public/@id equals excluded field/@id
+runtime_status: traceability_only
+
+```
+- type: BaseExclusions
+  module: HCV
+  match: public/@id equals excluded field/@id
+  runtime_status: traceability_only
+```
+
+execution:
+file_folder_exclusions:
+source: AgentRules/FileFolderExclusions.yaml
+responsibility: Skill
+behavior: >
+FileFolderExclusions.yaml is applied during normal traversal of the
+user-supplied application path. Matching files or folders are skipped
+before HCV validation is executed. No separate filtered application path
+or preprocessing pipeline is created.
+
+candidate_exclusions:
+source: AgentRules/Exclusions.yaml
+responsibility: Skill
+behavior: >
+Candidate-level exclusions are evaluated only after HCV deterministic
+candidate generation. Excluded candidates are removed before evidence
+verification and reporting.
+
+application_path:
+source: user_supplied_path
+restriction: >
+Analyze only the application path supplied by the user. Do not switch to
+Policy/ManuScripts, historical output directories, copied applications,
+or another filesystem location.
+
+result_gate:
+requirements:
+- Only candidates produced by the selected HCV AgentRule may become findings.
+- Excluded candidates must not become findings.
+- Every remaining candidate must pass current-filesystem evidence verification.
+- Only confirmed violations may appear in the final report.
+
+reporting:
+user_facing_violation:
+identifier: field_id
+format: >
+The generic ApplicationCompliance Skill groups confirmed HCV violations
+by source file and lists the field identifier under each file.
+
+internal_metadata:
+retained_for_verification:
+- parameter_name
+- parameter_value
+- location
+- exclusion_status
+not_rendered_by_default: true
+
+presentation:
+controlled_by: ApplicationCompliance Skill
+requirements:
+- Group all confirmed HCV violations by source file.
+- Show each source file name once.
+- Show the complete file path once for that source file.
+- List confirmed field identifiers beneath the file.
+- Do not render parameter value, parameter type, location, or exclusion status
+unless the selected AgentRule explicitly requires it as user-facing output.
+- Do not render internal candidate-processing details.
+
+notes:
+
+* The five HCV parameter checks are preserved exactly.
+* Parameter presence is determined by existence of the @value attribute.
+* An existing empty @value attribute remains a valid emitted parameter.
+* Parameter values are never trimmed, normalized, decoded, or case-folded.
+* One candidate is produced per present parameter, not per field.
+* The deterministic PowerShell command is the authoritative current validation implementation.
+* CustomExclusions and BaseExclusions are preserved only as historical XSL traceability.
+* Current candidate-level exclusion behavior is controlled by AgentRules/Exclusions.yaml.
+* File and folder traversal exclusions are controlled by AgentRules/FileFolderExclusions.yaml
+  through the ApplicationCompliance Skill.
+* No additional validation stage, alternate validator, filtered application,
+  or secondary exclusion pipeline is introduced.
+* The ApplicationCompliance Skill controls the final generic HTML report structure.

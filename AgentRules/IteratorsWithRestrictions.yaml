@@ -1,0 +1,234 @@
+﻿id: IWR
+name: 'Iterators With Restrictions'
+category: 'Performance'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This section lists all iterator fields that have a restriction defined, but are not using Advanced Query. Advanced Query is the preferred way to do restrictions for performance reasons. Note, however, that all items to check must be public elements in order to use Advanced Query. There may be valid reasons for using the standard restrictions and inclusion in this list does not mean that the item is wrong, only that it needs to be looked at to see if an Advanced Query is more appropriate.
+
+source:
+  file: files/source/MsCop/IteratorsWithRestrictions.xsl
+  module_id: IWR
+  templates:
+    - IteratorsWithRestrictions
+    - IWR_XML
+    - IWR_HTML
+    - IWR_Data
+    - IWR_AddRow_XML
+    - IWR_AddRow_HTML
+
+target:
+  primary_selector: >
+    //iterator[where and
+      (
+        (name(../../..)='public')
+        or
+        (name(../..)='private')
+      )
+    ]
+  inspected_selectors:
+    - >
+      //iterator[where and
+        (
+          name(../../..)='public'
+          or
+          name(../..)='private'
+        )
+      ]
+    - >
+      name(../../..)
+    - >
+      name(../..)
+    - >
+      ../../@id
+    - >
+      ../../../@id
+    - >
+      local-name(..)
+  scope: per_xml_file
+
+condition:
+  type: structural_child_presence
+  rule: >
+    An iterator is a candidate when it contains a where child and belongs to
+    either a Public field or a Private field according to the exact ancestor
+    relationships used by the source XSL.
+  matching:
+    where_required: true
+    public:
+      iterator_ancestor:
+        expression: name(../../..)
+        expected: public
+      reported_field_id: ../../../@id
+      field_scope: Public
+    private:
+      iterator_ancestor:
+        expression: name(../..)
+        expected: private
+      reported_field_id: ../../@id
+      field_scope: Private
+  comparison:
+    type: element_and_ancestor_presence
+    normalization: none
+  scope: per_xml_file
+  semantics: >
+    The source XSL does not inspect the contents of the where element and does
+    not test for Advanced Query directly. Any matching iterator with a where
+    child is therefore reported for review.
+
+exclusions:
+  - >
+    Candidate-level exclusions are resolved from the current
+    AgentRules/Exclusions.yaml configuration for module IWR.
+  - >
+    For Public candidates, the excluded field ID is ../../../@id.
+  - >
+    For Private candidates, the excluded field ID is ../../@id.
+  - >
+    CustomExclusions and BaseExclusions from the original XSL are retained as
+    source traceability; they are not independently reimplemented when the
+    current AgentRules exclusion configuration is available.
+
+validation_procedure:
+  type: powershell_xml_iterator_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    per_file: true
+  purpose: >
+    Parse each applicable XML file and identify iterator elements containing a
+    where child whose surrounding field structure matches the Public or Private
+    relationships used by the source XSL. The validator also reports the
+    corresponding field ID, field scope, and iterator parameter name.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = $xml.SelectNodes("//iterator[where]") |
+        ForEach-Object {
+            $iterator = $_
+            $fieldScope = $null
+            $fieldID = $null
+
+            if ($iterator.ParentNode.ParentNode.ParentNode.LocalName -eq "public") {
+                $fieldScope = "Public"
+                $fieldID = $iterator.ParentNode.ParentNode.ParentNode.GetAttribute("id")
+            }
+            elseif ($iterator.ParentNode.ParentNode.LocalName -eq "private") {
+                $fieldScope = "Private"
+                $fieldID = $iterator.ParentNode.ParentNode.GetAttribute("id")
+            }
+
+            if ($null -ne $fieldScope) {
+                [PSCustomObject]@{
+                    FieldID      = $fieldID
+                    FieldScope   = $fieldScope
+                    ParameterName = $iterator.ParentNode.LocalName
+                }
+            }
+        }
+
+    $results |
+        Sort-Object FieldID |
+        Select-Object FieldID, FieldScope, ParameterName
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of IWR validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Candidate exclusions must be applied according to the current
+      AgentRules/Exclusions.yaml configuration.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Do not inspect the where contents or infer Advanced Query usage beyond the
+      structural conditions implemented by the source XSL.
+    - >
+      Do not infer violations from filenames, folder names, or non-XML metadata.
+  result:
+    candidate_fields:
+      - FieldID
+      - FieldScope
+      - ParameterName
+  interpretation:
+    violation_when: >
+      A returned iterator remains after the configured IWR field exclusions are
+      applied. The result indicates an iterator with a standard where
+      restriction that should be reviewed for possible Advanced Query usage.
+    no_violation_when: >
+      No applicable iterator containing where remains after configured
+      exclusions.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an IWR violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the deterministic command_template
+      returns the iterator and its corresponding field relationship.
+    - >
+      Excluded candidates are not reported as confirmed violations.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - field_id
+    - field_scope
+    - parameter_name
+
+expected:
+  condition: >
+    Iterator fields should use Advanced Query where appropriate instead of
+    standard where restrictions, subject to the applicability constraints
+    described by the source XSL.
+  review_required: >
+    A matching IWR candidate is a performance-review finding, not necessarily
+    an incorrect implementation.
+
+violation:
+  message: >
+    Iterator has a restriction defined using a where parameter and should be
+    reviewed for possible Advanced Query usage.
+  severity: review
+
+original_logic:
+  exact_select_expression: >
+    //iterator[where and ((name(../../..)='public' and not(../../../@id = msxsl:node-set($CustomExclusions)/module[@id='IWR']/field/@id) and not(../../../@id = msxsl:node-set($BaseExclusions)/module[@id='IWR']/field/@id)) or (name(../..)='private' and not(../../@id = msxsl:node-set($CustomExclusions)/module[@id='IWR']/field/@id) and not(../../@id = msxsl:node-set($BaseExclusions)/module[@id='IWR']/field/@id)))]
+  sorting:
+    - >
+      ancestor::public[1]/@id|private[1]/@id
+  field_scope_logic:
+    private: >
+      local-name(../..) = 'private'
+    otherwise: Public
+  field_id_logic:
+    private: ../../@id
+    public: ../../../@id
+  parameter_name: local-name(..)
+  output_fields:
+    - fieldID
+    - parameterName
+
+notes:
+  - >
+    The source XSL reports iterators with a where child; it does not directly
+    test for the absence or presence of an Advanced Query element.
+  - >
+    The source XSL explicitly states that the finding is a performance review
+    recommendation and does not necessarily indicate an error.
+  - >
+    Public candidates use the field ID at ../../../@id, while Private
+    candidates use ../../@id.
+  - >
+    The reported parameterName is the local name of the iterator's immediate
+    parent.
+  - >
+    The original XSL sorts candidates using ancestor::public[1]/@id|private[1]/@id.

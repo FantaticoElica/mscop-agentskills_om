@@ -1,0 +1,211 @@
+﻿id: IFS
+name: 'Incorrect Field Scope'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+description: >
+  These fields may be in the wrong group. This list checks for Public fields that are in a parent group where the name includes "Private", and for Private fields that are in a parent group where the name includes "Input" or "Output".
+
+source:
+  file: files/source/MsCop/IncorrectFieldScope.xsl
+  module_id: IFS
+  templates:
+    - IncorrectFieldScope
+    - IFS_XML
+    - IFS_HTML
+    - IFS_Data
+    - IFS_AddRow_XML
+    - IFS_AddRow_HTML
+
+target:
+  primary_selector: >
+    //public[contains(../@id,'Private')]
+    |
+    //private[contains(../@id,'Input') or contains(../@id,'Output')]
+  inspected_selectors:
+    - >
+      //public[contains(../@id,'Private')]
+    - >
+      //private[contains(../@id,'Input') or contains(../@id,'Output')]
+    - >
+      local-name()
+    - >
+      @id
+    - >
+      ../@id
+
+condition:
+  rule:
+    - >
+      A public field is a candidate when its parent group's @id contains "Private".
+    - >
+      A private field is a candidate when its parent group's @id contains "Input" or "Output".
+  matching:
+    public:
+      field_scope: public
+      parent_group_id_contains:
+        - Private
+    private:
+      field_scope: private
+      parent_group_id_contains:
+        - Input
+        - Output
+  case_sensitive: true
+  whitespace_sensitive: true
+  scope: per_xml_file
+  original_xsl_semantics: >
+    The XSL uses the predicates ../@id = contains(../@id,'Private') and
+    ../@id = contains(../@id,'Input') or ../@id = contains(../@id,'Output').
+    These expressions are semantically equivalent to testing contains() against
+    the parent group's @id for the non-empty group IDs represented by the source
+    data. The deterministic validator therefore evaluates the intended
+    contains() predicates directly.
+
+exclusions:
+  - >
+    Candidate-level field exclusions are resolved from the current
+    AgentRules/Exclusions.yaml configuration for module IFS.
+  - >
+    CustomExclusions and BaseExclusions referenced by the original XSL are
+    retained as source traceability; they are not independently reimplemented
+    by the validator when the current AgentRules exclusion configuration is
+    available.
+
+validation_procedure:
+  type: powershell_xml_selector_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    per_file: true
+  purpose: >
+    Parse each applicable XML file, identify public fields whose parent group
+    ID contains "Private" and private fields whose parent group ID contains
+    "Input" or "Output", and emit deterministic candidate evidence matching the
+    IFS XSL output fields.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = @(
+        $xml.SelectNodes("//public[contains(../@id,'Private')]") |
+            ForEach-Object {
+                [PSCustomObject]@{
+                    FieldScope = $_.LocalName
+                    FieldID    = $_.GetAttribute("id")
+                    GroupID    = $_.ParentNode.GetAttribute("id")
+                    Reason     = "Public field in Private group"
+                }
+            }
+
+        $xml.SelectNodes("//private[contains(../@id,'Input') or contains(../@id,'Output')]") |
+            ForEach-Object {
+                [PSCustomObject]@{
+                    FieldScope = $_.LocalName
+                    FieldID    = $_.GetAttribute("id")
+                    GroupID    = $_.ParentNode.GetAttribute("id")
+                    Reason     = "Private field in Public group"
+                }
+            }
+    )
+
+    $results |
+        Sort-Object FieldScope, FieldID |
+        Select-Object FieldScope, FieldID, GroupID, Reason
+  execution_constraints:
+    - >
+      command_template is the authoritative implementation of IFS validation
+      semantics and must not be replaced by an alternate validator.
+    - >
+      Runtime orchestration may adapt quoting, invocation, iteration, and result
+      collection solely to execute the command_template reliably.
+    - >
+      Candidate exclusions must be applied according to the current
+      AgentRules/Exclusions.yaml configuration.
+    - >
+      Do not infer violations from filenames, folder names, or non-XML metadata.
+    - >
+      Validation is performed independently for each applicable XML file.
+    - >
+      Results must preserve FieldScope, FieldID, GroupID, and Reason evidence.
+  result:
+    candidate_fields:
+      - FieldScope
+      - FieldID
+      - GroupID
+      - Reason
+  interpretation:
+    violation_when: >
+      A returned candidate remains after the configured IFS exclusions are
+      applied.
+    no_violation_when: >
+      No applicable candidate remains after configured exclusions.
+    parse_failure: >
+      A file that cannot be parsed as XML is reported as a parse/validation
+      failure and is not treated as an IFS violation.
+  result_gate:
+    - >
+      A candidate is confirmed only when the deterministic command_template
+      returns the corresponding field and parent group relationship.
+    - >
+      Excluded candidates are not reported as confirmed violations.
+    - >
+      Transport or invocation failures are retried through permitted runtime
+      handling before the rule is marked Incomplete.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - field_scope
+    - field_id
+    - group_id
+    - reason
+
+expected:
+  public:
+    field_scope: public
+    group_id: >
+      Should not contain "Private".
+  private:
+    field_scope: private
+    group_id: >
+      Should not contain "Input" or "Output".
+
+violation:
+  public:
+    message: 'Public field in Private group'
+  private:
+    message: 'Private field in Public group'
+
+original_logic:
+  exact_select_expressions:
+    - >
+      //public[../@id = contains(../@id,'Private') and not(@id = msxsl:node-set($CustomExclusions)/module[@id='IFS']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='IFS']/field/@id)]
+      |
+      //private[(../@id = contains(../@id,'Input') or ../@id = contains(../@id,'Output')) and not(@id = msxsl:node-set($CustomExclusions)/module[@id='IFS']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='IFS']/field/@id)]
+  sorting:
+    - local-name()
+    - '@id'
+  output_fields:
+    - fieldScope
+    - fieldID
+    - groupID
+    - comments
+  comments:
+    public: 'Public field in Private group'
+    private: 'Private field in Public group'
+
+notes:
+  - >
+    The deterministic validation preserves the source XSL's intended
+    contains-based field/group relationship while making the malformed
+    ../@id = contains(...) predicate executable as an explicit contains()
+    test.
+  - >
+    The original XSL sorts candidates by local-name() and @id before rendering.
+  - >
+    The original XSL emits no module output when there are no matching items.
+  - >
+    Current AgentRules exclusion configuration is authoritative for runtime
+    candidate exclusion.

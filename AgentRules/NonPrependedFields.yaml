@@ -1,0 +1,119 @@
+﻿id: NPF
+name: 'Non-Prepended Fields'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This lists all fields where the ID doesn't have the parent group's ID prepended to it. This is normally only done for System level fields like ManuScriptEditingID and pure constants, like True and False.
+
+source:
+  file: files/source/MsCop/NonPrependedFields.xsl
+  module_id: NPF
+  templates:
+    - NonPrependedFields
+    - NPF_XML
+    - NPF_HTML
+    - NPF_Data
+    - NPF_AddRow_XML
+    - NPF_AddRow_HTML
+
+target:
+  primary_selector: >
+    //*[(name()='public' or name()='private') and not(contains(@id,'.'))]
+  inspected_selectors:
+    - >
+        //*[(name()='public' or name()='private') and not(contains(@id,'.'))]
+    - >
+        @id
+
+condition:
+  type: deterministic_xpath
+  rule: >
+    A field is a violation when it is a public or private element and its @id does not contain a period character.
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: NPF
+      handling: >
+        Apply configured NPF field exclusions during candidate evaluation. The current AgentRules exclusion configuration is authoritative at runtime.
+    legacy:
+      - CustomExclusions/module[@id='NPF']/field/@id
+      - BaseExclusions/module[@id='NPF']/field/@id
+      handling: >
+        Preserve these expressions for source traceability; do not require the legacy exclusion files to execute the rule.
+
+validation_procedure:
+  type: powershell_xml_xpath
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the NPF XSL selection by finding every public or private field whose ID does not contain a period.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $xml.SelectNodes("//*[local-name()='public' or local-name()='private'][not(contains(@id,'.'))]") |
+        ForEach-Object {
+            [PSCustomObject]@{
+                fieldID = $_.GetAttribute("id")
+            }
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport, quoting, escaping, and result collection required to execute the command_template safely.
+    - >
+      Candidate exclusions from AgentRules/Exclusions.yaml must be applied according to the active NPF exclusion configuration.
+    - >
+      Do not infer additional requirements about parent-group IDs; the source XSL checks only whether @id contains a '.' character.
+    - >
+      A transport or invocation failure must be retried through permitted runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - fieldID
+  multiplicity: >
+    One result per matching public or private field.
+  sort:
+    - fieldID
+  result_gate: >
+    Emit a violation when the field is public or private, its @id does not contain '.', and it is not excluded by the active NPF exclusions.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - fieldID
+
+expected:
+  pass: >
+    Every applicable public and private field has an ID containing a period, unless explicitly excluded by the active NPF exclusions.
+  violation: >
+    A public or private field has an ID without a period and is not excluded.
+
+violation:
+  title: 'Non-Prepended Field'
+  message: >
+    Field '{fieldID}' does not contain a prepended parent-group ID separator ('.').
+  severity: Standards
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //*[(name()='public' or name()='private') and not(contains(@id,'.')) and not(@id = msxsl:node-set($CustomExclusions)/module[@id='NPF']/field/@id) and not(@id = msxsl:node-set($BaseExclusions)/module[@id='NPF']/field/@id)]
+    - >
+        @id
+
+notes:
+  - >
+    The XSL performs the NPF check solely by testing whether a public/private field @id contains a '.' character.
+  - >
+    Results are sorted by @id in the source XSL.
+  - >
+    Legacy CustomExclusions and BaseExclusions are retained for source traceability; AgentRules/Exclusions.yaml is authoritative for current runtime exclusions.

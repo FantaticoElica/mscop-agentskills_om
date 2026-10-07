@@ -1,0 +1,209 @@
+﻿id: DF
+name: Duplicate Form
+category: Error
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Detect duplicate documentSet names in a ManuScript XML document.
+  Each documentSet must have a unique name. Every documentSet belonging
+  to a duplicate name group is reported as a violation.
+
+source:
+  file: files/source/MsCop/DuplicateForm.xsl
+  module_id: DF
+  templates:
+    - DuplicateForm
+    - DF_Data
+    - DF_AddRow_XML
+    - DF_AddRow_HTML
+
+target:
+  primary_selector: >
+    //documentSet
+
+  inspected_selectors:
+    - >
+        //documentSet
+    - >
+        @name
+
+condition:
+  type: duplicate_value
+  scope: single_xml_document
+
+  rule:
+    - >
+      Consider documentSet elements selected by //documentSet.
+    - >
+      Read the @name attribute of each documentSet.
+    - >
+      Group documentSet elements by their @name value within the same
+      XML document.
+    - >
+      A duplicate exists when the same @name value occurs more than once
+      within the same XML document.
+    - >
+      Every documentSet belonging to a duplicate name group is a violation.
+
+exclusions:
+  - >
+    Elements other than documentSet are ignored.
+  - >
+    Attributes other than name are ignored.
+  - >
+    documentSet names in different XML documents are not duplicates.
+  - >
+    Candidate-level exclusions are evaluated through the current
+    repository-wide exclusion configuration:
+    AgentRules/Exclusions.yaml.
+
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic Duplicate Form structural validation against
+    each applicable XML file in the supplied application.
+
+  xpath: >
+    //documentSet
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath "//documentSet"
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its XPath semantics.
+    - >
+      Treat the command output as the structural candidate set for this
+      rule.
+    - >
+      Evaluate duplicate @name values within each individual XML document.
+    - >
+      A documentSet is a confirmed violation only when its @name occurs
+      more than once within the same XML document.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+    - >
+      Candidate-level exclusions must be evaluated through the current
+      AgentRules/Exclusions.yaml configuration.
+
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      documentSet nodes returned by the validation XPath are structural
+      candidates requiring duplicate-name evaluation.
+
+    confirmed_violation_requires:
+      - >
+        The matched node is a documentSet element.
+      - >
+        The documentSet has a name attribute.
+      - >
+        The same name value occurs more than once among documentSet
+        elements in the same XML document.
+      - >
+        The candidate is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The Select-Xml result is a structural candidate set, not by itself
+        a confirmed violation.
+      - >
+        Duplicate detection must be evaluated independently within each
+        XML document.
+      - >
+        Every documentSet belonging to a duplicate name group must be
+        reported as a violation.
+      - >
+        documentSet names in different XML documents must never be grouped
+        together.
+      - >
+        Candidate-level exclusions must be evaluated before reporting a
+        confirmed violation.
+      - >
+        Do not introduce additional duplicate, name, grouping, or exclusion
+        conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - element_type
+    - name
+    - location
+    - duplicate_occurrences
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+
+expected:
+  condition: >
+    Every documentSet in an XML document must have a unique name unless
+    excluded by an applicable entry in AgentRules/Exclusions.yaml.
+
+violation:
+  when: >
+    Two or more documentSet elements in the same XML document have the
+    same name, the candidate is not excluded by an applicable entry in
+    AgentRules/Exclusions.yaml, and the duplicate is confirmed against
+    the current application filesystem.
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //documentSet
+    - >
+        count(//documentSet[@name=$docSetName])
+    - >
+        @name
+    - >
+        position()
+
+notes:
+  - >
+    The original XSL selects every documentSet, groups them implicitly by
+    @name, and reports every documentSet whose name occurs more than once
+    within the same XML document.
+
+  - >
+    The deterministic Select-Xml validation identifies the documentSet
+    candidate set first. Each candidate must then be evaluated against
+    the duplicate-name condition before it can become a confirmed
+    violation.
+
+  - >
+    Every occurrence belonging to a duplicate name group is reported,
+    matching the original DF XSL behavior.
+
+  - >
+    Candidate-level exclusion evaluation is performed using
+    AgentRules/Exclusions.yaml.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

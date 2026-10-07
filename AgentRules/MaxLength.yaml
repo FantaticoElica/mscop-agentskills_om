@@ -1,0 +1,470 @@
+﻿id: MML
+
+name: 'Missing Max Length'
+
+category: 'Standards'
+
+status: READY
+
+validation: VALIDATED
+
+generated: true
+
+description: >
+This list shows Public string fields (fields with defined options, and
+fields inside a group containing "NonShredded" in the group name are
+excluded) that do not have a MaxLength defined or that have MaxLength
+defined in some way other than using a Constant. Missing Max Length values
+are a major reason for Shredding failures.
+
+source:
+file: files/source/MsCop/MaxLength.xsl
+module_id: MML
+templates:
+- MissingMaxLength
+- MML_XML
+- MML_HTML
+- MML_Data
+- MML_AddRow_XML
+- MML_AddRow_HTML
+- ParameterType
+
+target:
+primary_selector: >
+model/object[@id='data']//public[
+not(nameValues/@schemaExclude='1')
+and (@type='string')
+and not(definition/options)
+and not(contains(../@id,'NonShredded'))
+and (
+not(definition/maxLength)
+or
+(definition/maxLength/@value and definition/maxLength/@value='')
+or
+(definition/maxLength/@idref and definition/maxLength/@idref='')
+or
+(not(definition/maxLength/@value) and not(definition/maxLength/@idref))
+)
+]
+
+inspected_selectors:
+- >
+model/object[@id='data']//public[
+not(nameValues/@schemaExclude='1')
+and (@type='string')
+and not(definition/options)
+and not(contains(../@id,'NonShredded'))
+and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MML']/field/@id)
+and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MML']/public/@id)
+and (
+not(definition/maxLength)
+or
+(definition/maxLength/@value and definition/maxLength/@value='')
+or
+(definition/maxLength/@idref and definition/maxLength/@idref='')
+or
+(not(definition/maxLength/@value) and not(definition/maxLength/@idref))
+)
+]
+
+```
+- >
+    @id
+```
+
+condition:
+type: missing_or_invalid_max_length
+
+rule:
+- Consider public elements under model/object[@id='data'].
+- The public field must not have nameValues/@schemaExclude='1'.
+- The public field must have @type='string'.
+- The public field must not contain definition/options.
+- The public field must not belong to a group whose @id contains 'NonShredded'.
+- A public field is a candidate when definition/maxLength is missing.
+- A public field is also a candidate when definition/maxLength/@value exists but is empty.
+- A public field is also a candidate when definition/maxLength/@idref exists but is empty.
+- A public field is also a candidate when definition/maxLength has neither @value nor @idref.
+
+field:
+attribute: '@id'
+required: true
+
+schema_exclude:
+attribute: 'nameValues/@schemaExclude'
+excluded_value: '1'
+
+type:
+attribute: '@type'
+required_value: 'string'
+
+options:
+selector: 'definition/options'
+must_be_absent: true
+
+non_shredded_group:
+selector: '../@id'
+excluded_when_contains: 'NonShredded'
+case_sensitive: true
+
+max_length:
+selector: 'definition/maxLength'
+missing: true
+empty_value: true
+empty_idref: true
+no_value_or_idref: true
+
+exclusions:
+
+* >
+
+  Candidate-level exclusions are evaluated only through the current
+  repository-wide exclusion configuration:
+  AgentRules/Exclusions.yaml.
+
+* >
+
+  The current MML candidate-level exclusion configuration applies only
+  when an explicit MML exclusion entry is present in
+  AgentRules/Exclusions.yaml.
+
+* >
+
+  CustomExclusions and BaseExclusions from the original MSCop XSL are
+  historical/original rule semantics and are not current runtime
+  exclusion sources for this AgentRule.
+
+* >
+
+  Do not search for, reconstruct, or apply CustomExclusions or
+  BaseExclusions as a separate runtime exclusion mechanism.
+
+validation_procedure:
+type: powershell_select_xml
+
+execution:
+runtime: powershell
+mode: direct_command
+per_file: true
+
+purpose: >
+Execute the deterministic MML XML validation against each applicable
+XML file in the supplied application.
+
+xpath: >
+//model/object[@id='data']//public[
+not(nameValues/@schemaExclude='1')
+and (@type='string')
+and not(definition/options)
+and not(contains(../@id,'NonShredded'))
+and (
+not(definition/maxLength)
+or
+(definition/maxLength/@value and definition/maxLength/@value='')
+or
+(definition/maxLength/@idref and definition/maxLength/@idref='')
+or
+(not(definition/maxLength/@value) and not(definition/maxLength/@idref))
+)
+]
+
+command_template: >
+Select-Xml -Path "<XML_FILE>" -XPath
+"//model/object[@id='data']//public[not(nameValues/@schemaExclude='1') and (@type='string') and not(definition/options) and not(contains(../@id,'NonShredded')) and (not(definition/maxLength) or (definition/maxLength/@value and definition/maxLength/@value='') or (definition/maxLength/@idref and definition/maxLength/@idref='') or (not(definition/maxLength/@value) and not(definition/maxLength/@idref)))]"
+
+execution_constraints:
+- >
+Execute the command_template directly using the available command
+execution capability.
+
+```
+- >
+  Replace <XML_FILE> with the current XML file being analyzed.
+
+- >
+  Execute the command separately for each applicable XML file.
+
+- >
+  Do not generate a separate PowerShell script to replace the
+  command_template.
+
+- >
+  Do not modify the command_template or its XPath semantics.
+
+- >
+  Do not independently recreate the MML validation logic outside the
+  command_template.
+
+- >
+  Treat the command output as the candidate set for this rule.
+
+- >
+  Candidate-level exclusions must be evaluated after candidate
+  generation using AgentRules/Exclusions.yaml.
+```
+
+result:
+type: xml_nodes
+matched_nodes_are: candidates
+
+interpretation:
+matched_nodes: >
+Nodes returned by the XPath are candidates for Missing Max Length.
+
+```
+confirmed_violation_requires:
+  - >
+    The matched node is a public element under
+    model/object[@id='data'].
+
+  - >
+    The matched node does not have nameValues/@schemaExclude='1'.
+
+  - >
+    The matched node has @type='string'.
+
+  - >
+    The matched node does not contain definition/options.
+
+  - >
+    The parent group @id does not contain 'NonShredded'.
+
+  - >
+    definition/maxLength is missing, or its @value is empty, or its
+    @idref is empty, or neither @value nor @idref is present.
+
+  - >
+    Any applicable candidate-level exclusions defined in
+    AgentRules/Exclusions.yaml have been evaluated.
+
+  - >
+    The candidate is not excluded by an applicable entry in
+    AgentRules/Exclusions.yaml.
+
+parameter_type:
+  purpose: >
+    Determine the MaxLength parameter type for evidence and reporting
+    using the same deterministic classification implemented by the
+    original ParameterType template.
+
+  rules:
+    - >
+      If definition/maxLength is missing, parameter type is 'n/a'.
+
+    - >
+      If definition/maxLength/calculation exists, parameter type is
+      'Calculation'.
+
+    - >
+      If definition/maxLength/external exists, parameter type is
+      'External'.
+
+    - >
+      If definition/maxLength/comparison exists, parameter type is
+      'Comparison'.
+
+    - >
+      If definition/maxLength/if exists, parameter type is
+      'Comparison'.
+
+    - >
+      If definition/maxLength/dateDifference exists, parameter type is
+      'Date'.
+
+    - >
+      If definition/maxLength/dateAdd exists, parameter type is 'Date'.
+
+    - >
+      If definition/maxLength/datePart exists, parameter type is 'Date'.
+
+    - >
+      If definition/maxLength/iterator exists, parameter type is
+      'Iterator'.
+
+    - >
+      If definition/maxLength/lookup exists, parameter type is 'Lookup'.
+
+    - >
+      If definition/maxLength/request exists, parameter type is 'Request'.
+
+    - >
+      If definition/maxLength/select exists, parameter type is 'Select'.
+
+    - >
+      If definition/maxLength/session exists, parameter type is 'Session'.
+
+    - >
+      If definition/maxLength/subString exists, parameter type is
+      'Substring'.
+
+    - >
+      If definition/maxLength/functionCall exists, parameter type is
+      'Function'.
+
+    - >
+      Otherwise, parameter type is 'unknown'.
+
+important:
+  - >
+    The Select-Xml result is a candidate set, not by itself a confirmed
+    violation.
+
+  - >
+    After candidate generation, evaluate the candidate against
+    AgentRules/Exclusions.yaml.
+
+  - >
+    CustomExclusions and BaseExclusions are part of the original MSCop
+    XSL semantics for traceability only. They are not current runtime
+    exclusion sources for this AgentRule.
+
+  - >
+    Do not search for, reconstruct, or apply CustomExclusions or
+    BaseExclusions during current execution.
+
+  - >
+    Do not use the validation XPath as a substitute for the complete
+    current AgentRule execution flow.
+
+  - >
+    Do not broaden the XPath beyond the original MML structural
+    selection semantics.
+```
+
+evidence:
+required:
+- file
+- location
+- field_id
+- field_type
+- max_length
+- parameter_type
+- exclusion_status
+
+report:
+include_relevant_xml: true
+include_parent_element: true
+include_field_id: true
+include_parameter_type: true
+include_max_length: true
+
+expected:
+condition: >
+Public string fields that are subject to MML validation must have a
+valid MaxLength definition according to the original MML selection
+semantics, unless excluded by an applicable entry in
+AgentRules/Exclusions.yaml.
+
+violation:
+when: >
+A public string field under model/object[@id='data'] is not schema
+excluded, has no definition/options, is not inside a group whose id
+contains 'NonShredded', and has a missing or empty MaxLength definition
+according to the original MML XPath semantics, and is not excluded by
+an applicable entry in AgentRules/Exclusions.yaml.
+
+original_logic:
+exact_select_expressions:
+- >
+model/object[@id='data']//public[
+not(nameValues/@schemaExclude='1')
+and (@type='string')
+and not(definition/options)
+and not(contains(../@id,'NonShredded'))
+and not(@id = msxsl:node-set($CustomExclusions)/module[@id='MML']/field/@id)
+and not(@id = msxsl:node-set($BaseExclusions)/module[@id='MML']/public/@id)
+and (
+not(definition/maxLength)
+or
+(definition/maxLength/@value and definition/maxLength/@value='')
+or
+(definition/maxLength/@idref and definition/maxLength/@idref='')
+or
+(not(definition/maxLength/@value) and not(definition/maxLength/@idref))
+)
+]
+
+```
+- >
+    @id
+```
+
+parameter_type_logic:
+- >
+not(definition/maxLength) -> n/a
+- >
+definition/maxLength/calculation -> Calculation
+- >
+definition/maxLength/external -> External
+- >
+definition/maxLength/comparison -> Comparison
+- >
+definition/maxLength/if -> Comparison
+- >
+definition/maxLength/dateDifference -> Date
+- >
+definition/maxLength/dateAdd -> Date
+- >
+definition/maxLength/datePart -> Date
+- >
+definition/maxLength/iterator -> Iterator
+- >
+definition/maxLength/lookup -> Lookup
+- >
+definition/maxLength/request -> Request
+- >
+definition/maxLength/select -> Select
+- >
+definition/maxLength/session -> Session
+- >
+definition/maxLength/subString -> Substring
+- >
+definition/maxLength/functionCall -> Function
+- >
+otherwise -> unknown
+
+notes:
+
+* >
+
+  The original XSL selector contains both the structural MML condition
+  and legacy CustomExclusions/BaseExclusions logic.
+
+* >
+
+  The deterministic Select-Xml validation identifies the structural
+  candidate first. Candidate-level exclusion evaluation is performed
+  using AgentRules/Exclusions.yaml before reporting a confirmed violation.
+
+* >
+
+  CustomExclusions and BaseExclusions are retained in original_logic
+  for traceability to the legacy XSL only and are not runtime exclusion
+  sources for the current AgentRule.
+
+* >
+
+  The validation XPath is intentionally limited to the structural
+  candidate conditions from the original MML rule. It must not introduce
+  a different XML structure or additional runtime exclusion mechanism.
+
+* >
+
+  ParameterType is retained because it is part of the original MML
+  reporting semantics and can be used as deterministic evidence for the
+  matched field.
+
+* >
+
+  File and folder exclusions are handled by the generic
+  ApplicationCompliance Skill through AgentRules/FileFolderExclusions.yaml
+  before this rule's validation is executed.
+
+* >
+
+  Candidate-level exclusions are handled through
+  AgentRules/Exclusions.yaml after candidate generation.
+
+* >
+
+  Generated skeletons must not overwrite manually curated rule semantics.

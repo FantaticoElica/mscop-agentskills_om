@@ -1,0 +1,284 @@
+﻿id: CI
+name: 'Coverage Indicators'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Coverages must have an Indicator field. The Indicator field is used to
+  turn the coverage "on" and "off". By standard, the path of the Indicator
+  field must be either "Indicator" or "Indicators[Type='XXX']/bValue".
+  This report shows any coverage nodes that do not have a field that matches
+  this standard.
+
+source:
+  file: files/source/MsCop/CoverageIndicator.xsl
+  module_id: CI
+  templates:
+    - CoverageIndicator
+    - CI_XML
+    - CI_HTML
+    - CI_Data
+    - CI_AddRow_XML
+    - CI_AddRow_HTML
+
+target:
+  primary_selector: >
+    //object[starts-with(@path,'coverage[Type="')]
+
+  inspected_selectors:
+    - >
+        //object[
+          starts-with(@path,'coverage[Type="')
+          and
+          not(
+            @id =
+            msxsl:node-set($CustomExclusions)/module[@id='CI']/group/@id
+          )
+          and
+          not(
+            @id =
+            msxsl:node-set($BaseExclusions)/module[@id='CI']/group/@id
+          )
+        ]
+    - >
+        substring-before(
+          substring-after(@path,'coverage[Type="'),
+          '"]'
+        )
+    - >
+        $CoverageType
+    - >
+        msxsl:node-set($CoverageObjects)/covObject
+    - >
+        @id
+
+condition:
+  type: missing_coverage_indicator
+  rule:
+    - >
+      Consider object nodes whose @path starts with
+      'coverage[Type="'.
+    - >
+      Treat the object as a coverage object and determine its coverage type
+      from the coverage path.
+    - >
+      The coverage must contain an Indicator field following one of the
+      supported standard paths.
+    - >
+      The supported Indicator paths are "Indicator" or
+      "Indicators[Type='XXX']/bValue".
+    - >
+      A coverage object is a candidate when it does not have a field
+      matching the required Indicator standard.
+    - >
+      Candidate-level exclusions are evaluated through
+      AgentRules/Exclusions.yaml before confirming a violation.
+
+indicator_standard:
+  allowed_paths:
+    - 'Indicator'
+    - "Indicators[Type='XXX']/bValue"
+
+exclusions:
+  - >
+    Candidate-level exclusions are evaluated only through the current
+    repository-wide exclusion configuration:
+    AgentRules/Exclusions.yaml.
+
+  - >
+    The current CI candidate-level exclusion configuration contains no
+    configured exclusions unless an entry is explicitly present for CI
+    in AgentRules/Exclusions.yaml.
+
+  - >
+    CustomExclusions and BaseExclusions from the original MSCop XSL are
+    historical/original rule semantics and are not current runtime
+    exclusion sources for this AgentRule.
+
+  - >
+    Do not search for, reconstruct, or apply CustomExclusions or
+    BaseExclusions as a separate runtime exclusion mechanism.
+
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic CI XML validation against each applicable
+    XML file in the supplied application.
+
+  xpath: >
+    //object[starts-with(@path,'coverage[Type="')]
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath
+    "//object[starts-with(@path,'coverage[Type="')]"
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its XPath semantics.
+    - >
+      Treat the command output as the structural candidate set for this
+      rule.
+    - >
+      The validation procedure must determine whether each coverage
+      candidate contains an Indicator field matching one of the allowed
+      standard paths.
+    - >
+      Do not replace the deterministic validation procedure with an
+      independently implemented XPath, regex, XML parser, LLM inspection,
+      or alternate validator.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      Nodes returned by the validation XPath are coverage candidates
+      requiring evaluation against the Coverage Indicator standard.
+
+    confirmed_violation_requires:
+      - >
+        The matched node is an object element.
+      - >
+        The object's @path starts with 'coverage[Type="'.
+      - >
+        The coverage does not contain an Indicator field matching either
+        "Indicator" or "Indicators[Type='XXX']/bValue".
+      - >
+        Any applicable candidate-level exclusions defined in
+        AgentRules/Exclusions.yaml have been evaluated.
+      - >
+        The candidate is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The Select-Xml result is a structural candidate set, not by itself
+        a confirmed violation.
+      - >
+        The coverage Indicator requirement must be evaluated for each
+        candidate before confirming a violation.
+      - >
+        After candidate generation, evaluate applicable candidates against
+        AgentRules/Exclusions.yaml.
+      - >
+        CustomExclusions and BaseExclusions are part of the original MSCop
+        XSL semantics for traceability only. They are not current runtime
+        exclusion sources for this AgentRule.
+      - >
+        Do not search for, reconstruct, or apply CustomExclusions or
+        BaseExclusions during current execution.
+      - >
+        Do not use the primary validation XPath as a substitute for the
+        complete current CI AgentRule execution flow.
+      - >
+        Do not introduce additional coverage, Indicator, field-path, or
+        exclusion conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - location
+    - coverage_id
+    - coverage_type
+    - indicator_status
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+    include_coverage_id: true
+
+expected:
+  condition: >
+    Every applicable coverage object must contain an Indicator field using
+    either the standard "Indicator" path or the standard
+    "Indicators[Type='XXX']/bValue" path, unless excluded by an applicable
+    entry in AgentRules/Exclusions.yaml.
+
+violation:
+  when: >
+    A coverage object identified by an @path beginning with
+    'coverage[Type="' does not contain an Indicator field matching either
+    "Indicator" or "Indicators[Type='XXX']/bValue", is not excluded by an
+    applicable entry in AgentRules/Exclusions.yaml, and is confirmed against
+    the current application filesystem.
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //object[
+          starts-with(@path,'coverage[Type="')
+          and
+          not(
+            @id =
+            msxsl:node-set($CustomExclusions)/module[@id='CI']/group/@id
+          )
+          and
+          not(
+            @id =
+            msxsl:node-set($BaseExclusions)/module[@id='CI']/group/@id
+          )
+        ]
+    - >
+        substring-before(
+          substring-after(@path,'coverage[Type="'),
+          '"]'
+        )
+    - >
+        $CoverageType
+    - >
+        msxsl:node-set($CoverageObjects)/covObject
+    - >
+        @id
+
+notes:
+  - >
+    The original XSL selector identifies coverage objects and applies
+    CustomExclusions and BaseExclusions.
+
+  - >
+    The deterministic Select-Xml validation identifies the structural
+    coverage candidate set first. The candidate must then be evaluated
+    against the Coverage Indicator standard before it can become a
+    confirmed violation.
+
+  - >
+    Candidate-level exclusion evaluation is performed using
+    AgentRules/Exclusions.yaml before reporting a confirmed violation.
+
+  - >
+    CustomExclusions and BaseExclusions are retained in original_logic
+    for traceability to the legacy XSL only and are not runtime exclusion
+    sources for the current AgentRule.
+
+  - >
+    The validation procedure must remain semantically aligned with the
+    original CI XSL and must not introduce a different XML structure.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

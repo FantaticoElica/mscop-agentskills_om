@@ -1,0 +1,280 @@
+﻿id: TKS
+name: 'Spaces in Table Keys'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  This lists tables where a key (with a data type of String) has a space in its value or name. Though it will work properly if the lookup also has a space in the key, by standard we do not want to use keys with spaces.
+
+source:
+  file: files/source/MsCop/TableKeySpaces.xsl
+  module_id: TKS
+  templates:
+    - TableKeySpaces
+    - TKS_XML
+    - TKS_HTML
+    - TKS_Data
+    - TKS_AddRow_XML
+    - TKS_AddRow_HTML
+
+target:
+  primary_selector: >
+    //table/rowKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq']
+    /key[contains(@value,' ') or contains(../@name,' ')]
+    |
+    //table/colKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq']
+    /key[contains(@value,' ') or contains(../@name,' ')]
+  inspected_selectors:
+    - >
+        //table/rowKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq']/key[contains(@value,' ') or contains(../@name,' ')]
+    - >
+        //table/colKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq']/key[contains(@value,' ') or contains(../@name,' ')]
+    - >
+        ../@name
+    - >
+        ../../@id
+    - >
+        @value
+    - >
+        @tableName
+    - >
+        @parentName
+    - >
+        key[contains(@value,' ') or contains(../@name,' ')]
+  selection_requirements:
+    key_type: string
+    find: eq
+    key_or_parent_name_contains_space: true
+
+condition:
+  type: deterministic_table_key_validation
+  rule: >
+    Select string rowKeys and colKeys with @find='eq' where either the key
+    value contains a space or the key container name contains a space.
+  violation: >
+    A selected table key has a space in its value or its key name.
+  candidate_construction: >
+    The source first collects all matching keys, sorts them by key container
+    name, and then emits every key whose value contains a space. For a key
+    whose name contains a space but whose value does not, the source emits one
+    representative row per unique table/key-name combination when the
+    combination has no key value containing a space.
+  deduplication:
+    exact_source_predicate: >
+      contains(@value,' ') or
+      (
+        concat(following-sibling::key[1]/@tableName,following-sibling::key[1]/@parentName)
+        != concat(@tableName,@parentName)
+        and count(key('ValueSpaces', concat(@tableName,@parentName))) = 0
+      )
+    value_space_behavior: >
+      Every selected key whose value contains a space is emitted.
+    name_only_behavior: >
+      When only the key name contains a space, emit one row for the unique
+      tableName/parentName combination provided that no key in that table/key
+      combination has a value containing a space.
+  exclusions:
+    current:
+      source: AgentRules/Exclusions.yaml
+      module_id: TKS
+      handling: >
+        Candidate table exclusions are resolved from the current AgentRules
+        exclusion configuration.
+    legacy:
+      custom_expression: >
+        not(../@id = msxsl:node-set($CustomExclusions)/module[@id='TKS']/table/@id)
+      base_expression: >
+        not(../@id = msxsl:node-set($BaseExclusions)/module[@id='TKS']/table/@id)
+      handling: >
+        These source expressions are retained for traceability; current
+        exclusions are authoritative.
+
+validation_procedure:
+  type: powershell_xml_table_key_scan
+  execution:
+    runtime: PowerShell
+    mode: per_file
+    scope: XML files selected by the AgentRules Skill
+  purpose: >
+    Reproduce the TKS XSL selection, source ordering, ValueSpaces grouping,
+    deduplication behavior, and final table/key/value output.
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $content = [System.Collections.Generic.List[object]]::new()
+
+    $containers = $xml.SelectNodes(
+        "//table/rowKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq'] |
+         //table/colKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq']"
+    )
+
+    foreach ($container in $containers) {
+        foreach ($key in $container.SelectNodes("key[contains(@value,' ') or contains(../@name,' ')]")) {
+            [void]$content.Add(
+                [PSCustomObject]@{
+                    value      = $key.GetAttribute("value")
+                    parentName = $container.GetAttribute("name")
+                    tableName  = $container.ParentNode.GetAttribute("id")
+                }
+            )
+        }
+    }
+
+    $content = @($content | Sort-Object parentName)
+
+    $valueSpaces = @{}
+
+    foreach ($row in $content) {
+        $groupKey = $row.tableName + $row.parentName
+
+        if ($row.value.Contains(" ")) {
+            if (-not $valueSpaces.ContainsKey($groupKey)) {
+                $valueSpaces[$groupKey] = 0
+            }
+            $valueSpaces[$groupKey]++
+        }
+    }
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    for ($i = 0; $i -lt $content.Count; $i++) {
+        $row = $content[$i]
+
+        $emit = $false
+
+        if ($row.value.Contains(" ")) {
+            $emit = $true
+        }
+        else {
+            $next = $null
+
+            if ($i + 1 -lt $content.Count) {
+                $next = $content[$i + 1]
+            }
+
+            $currentGroup = $row.tableName + $row.parentName
+            $nextGroup = ""
+
+            if ($next) {
+                $nextGroup = $next.tableName + $next.parentName
+            }
+
+            if (
+                $nextGroup -ne $currentGroup -and
+                -not $valueSpaces.ContainsKey($currentGroup)
+            ) {
+                $emit = $true
+            }
+        }
+
+        if ($emit) {
+            [void]$results.Add(
+                [PSCustomObject]@{
+                    tableID = $row.tableName
+                    keyName = $row.parentName
+                    keyValue = $row.value
+                }
+            )
+        }
+    }
+
+    $results |
+        Sort-Object tableID, keyName |
+        ForEach-Object {
+            $_
+        }
+  execution_constraints:
+    - >
+      The command_template is the complete validation implementation and its
+      semantic logic must not be replaced by a different validator.
+    - >
+      Runtime orchestration may adapt only file iteration, command transport,
+      quoting, escaping, and result collection required to execute the
+      command_template safely.
+    - >
+      Only rowKeys and colKeys whose @type is exactly 'string' and @find is
+      exactly 'eq' are eligible.
+    - >
+      A space is detected using the source contains(...,' ') semantics.
+    - >
+      Every key whose value contains a space must be retained.
+    - >
+      Name-only violations must be deduplicated according to the source
+      following-sibling and ValueSpaces logic.
+    - >
+      A transport or invocation failure must be retried through permitted
+      runtime-only orchestration before the rule is marked Incomplete.
+
+result:
+  output_fields:
+    - tableID
+    - keyName
+    - keyValue
+  multiplicity: >
+    One result per source TKS output row after the source deduplication logic.
+  sorting:
+    - tableID
+    - keyName
+  result_gate: >
+    Emit only rows satisfying the source value-space or name-space condition
+    after the source deduplication behavior.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+  fields:
+    - tableID
+    - keyName
+    - keyValue
+
+expected:
+  pass: >
+    String equality table keys have no spaces in either the key name or key
+    value.
+  violation: >
+    A string equality table key contains a space in its name or value.
+
+violation:
+  title: 'Space in Table Key'
+  message: >
+    Table '{tableID}' has key '{keyName}' with value '{keyValue}' containing
+    a prohibited space in the key name or key value.
+  severity: Standards
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //table/rowKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq' and not(../@id = msxsl:node-set($CustomExclusions)/module[@id='TKS']/table/@id) and not(../@id = msxsl:node-set($BaseExclusions)/module[@id='TKS']/table/@id)]/key[contains(@value,' ') or contains(../@name,' ')]
+    - >
+        //table/colKeys[key[contains(@value,' ') or contains(../@name,' ')] and @type='string' and @find='eq' and not(../@id = msxsl:node-set($CustomExclusions)/module[@id='TKS']/table/@id) and not(../@id = msxsl:node-set($BaseExclusions)/module[@id='TKS']/table/@id)]/key[contains(@value,' ') or contains(../@name,' ')]
+    - >
+        ../@name
+    - >
+        ../../@id
+    - >
+        msxsl:node-set($Content)/key[contains(@value,' ') or (concat(following-sibling::key[1]/@tableName,following-sibling::key[1]/@parentName) != concat(@tableName,@parentName) and count(key('ValueSpaces', concat(@tableName,@parentName))) = 0)]
+    - >
+        @tableName
+    - >
+        @parentName
+    - >
+        @value
+
+notes:
+  - >
+    The source defines ValueSpaces as keys whose @value contains a space,
+    grouped by concat(@tableName,@parentName).
+  - >
+    The source sorts the intermediate Content by key container @name before
+    applying the final output predicate.
+  - >
+    The source output fields are tableID, keyName, and keyValue.
+  - >
+    The source does not distinguish rowKeys from colKeys in the final output.
+  - >
+    Current AgentRules exclusions are authoritative; the original CustomExclusions
+    and BaseExclusions expressions are retained for traceability.

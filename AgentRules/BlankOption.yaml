@@ -1,0 +1,285 @@
+﻿id: BO
+name: 'Hard-coded BlankOption'
+category: 'Standards'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Deprecated by the Hard-coded Values module. This table lists hard-coded
+  blankOption format mask values used by more than one field. If a particular
+  "blankOption" value is used more than once, then a field reference should
+  be used instead of hard-coding the same value into multiple places.
+
+source:
+  file: files/source/MsCop/BlankOption.xsl
+  module_id: BO
+  templates:
+    - BlankOption
+    - BO_XML
+    - BO_HTML
+    - BO_Data
+    - BO_AddRow_XML
+    - BO_AddRow_HTML
+
+target:
+  primary_selector: >
+    //public[definition/formatMask[contains(@value,'blankOption:')]]
+
+  inspected_selectors:
+    - >
+        //public[
+          definition/formatMask[contains(@value,'blankOption:')]
+          and
+          not(
+            @id =
+            msxsl:node-set($CustomExclusions)/module[@id='BO']/field/@id
+          )
+          and
+          not(
+            @id =
+            msxsl:node-set($BaseExclusions)/module[@id='BO']/field/@id
+          )
+        ]
+    - >
+        definition/formatMask/@value
+    - >
+        msxsl:node-set($Content)/field[
+          following-sibling::field/@formatMask = @formatMask
+          or
+          preceding-sibling::field/@formatMask = @formatMask
+        ]
+    - >
+        @formatMask
+    - >
+        @id
+
+condition:
+  type: duplicate_blank_option
+  rule:
+    - >
+      Consider public fields containing a definition/formatMask element
+      whose @value contains 'blankOption:'.
+    - >
+      The blankOption format mask value is the value being evaluated for
+      repeated hard-coded usage.
+    - >
+      A candidate becomes a confirmed violation when the same hard-coded
+      blankOption value is used by more than one applicable field.
+    - >
+      Candidate-level exclusions are evaluated through
+      AgentRules/Exclusions.yaml before confirming a violation.
+
+  format_mask:
+    element: 'definition/formatMask'
+    attribute: '@value'
+    contains: 'blankOption:'
+
+exclusions:
+  - >
+    Candidate-level exclusions are evaluated only through the current
+    repository-wide exclusion configuration:
+    AgentRules/Exclusions.yaml.
+
+  - >
+    The current BO candidate-level exclusion configuration contains no
+    configured exclusions unless an entry is explicitly present for BO
+    in AgentRules/Exclusions.yaml.
+
+  - >
+    CustomExclusions and BaseExclusions from the original MSCop XSL are
+    historical/original rule semantics and are not current runtime
+    exclusion sources for this AgentRule.
+
+  - >
+    Do not search for, reconstruct, or apply CustomExclusions or
+    BaseExclusions as a separate runtime exclusion mechanism.
+
+validation_procedure:
+  type: powershell_select_xml
+
+  execution:
+    runtime: powershell
+    mode: direct_command
+    per_file: true
+
+  purpose: >
+    Execute the deterministic BO XML validation against each applicable
+    XML file in the supplied application.
+
+  xpath: >
+    //public[definition/formatMask[contains(@value,'blankOption:')]]
+
+  command_template: >
+    Select-Xml -Path "<XML_FILE>" -XPath
+    "//public[definition/formatMask[contains(@value,'blankOption:')]]"
+
+  execution_constraints:
+    - >
+      Execute the command_template directly using the available command
+      execution capability.
+    - >
+      Replace <XML_FILE> with the current XML file being analyzed.
+    - >
+      Execute the command separately for each applicable XML file.
+    - >
+      Do not generate a separate PowerShell script to replace the
+      command_template.
+    - >
+      Do not modify the command_template or its XPath semantics.
+    - >
+      Treat the command output as the structural candidate set for this
+      rule.
+    - >
+      The validation procedure must preserve the BO requirement that a
+      blankOption value must be used more than once before a violation
+      is confirmed.
+    - >
+      Do not replace the deterministic validation procedure with an
+      independently implemented XPath, regex, XML parser, LLM inspection,
+      or alternate validator.
+    - >
+      Preserve per-file isolation. A parse failure in one XML file must
+      not silently alter validation of other applicable XML files.
+
+  result:
+    type: xml_nodes
+    matched_nodes_are: candidates
+
+  interpretation:
+    matched_nodes: >
+      Nodes returned by the validation XPath are structural candidates
+      containing a hard-coded blankOption format mask.
+
+    confirmed_violation_requires:
+      - >
+        The matched node is a public XML element.
+      - >
+        The node contains definition/formatMask/@value.
+      - >
+        The @value contains 'blankOption:'.
+      - >
+        The same hard-coded blankOption format mask value is used by
+        more than one applicable field.
+      - >
+        Any applicable candidate-level exclusions defined in
+        AgentRules/Exclusions.yaml have been evaluated.
+      - >
+        The candidate is not excluded by an applicable entry in
+        AgentRules/Exclusions.yaml.
+      - >
+        The candidate has been verified against the current application
+        filesystem.
+
+    important:
+      - >
+        The Select-Xml result is a structural candidate set, not by itself
+        a confirmed violation.
+      - >
+        Duplicate blankOption usage must be evaluated before reporting
+        a confirmed violation.
+      - >
+        After candidate generation, evaluate applicable candidates against
+        AgentRules/Exclusions.yaml.
+      - >
+        CustomExclusions and BaseExclusions are part of the original MSCop
+        XSL semantics for traceability only. They are not current runtime
+        exclusion sources for this AgentRule.
+      - >
+        Do not search for, reconstruct, or apply CustomExclusions or
+        BaseExclusions during current execution.
+      - >
+        Do not use the primary validation XPath as a substitute for the
+        complete current BO AgentRule execution flow.
+      - >
+        Do not introduce additional field, format-mask, or blankOption
+        conditions that are not defined by this AgentRule.
+
+evidence:
+  required:
+    - file
+    - location
+    - field_id
+    - actual_value
+    - exclusion_status
+
+  report:
+    include_relevant_xml: true
+    include_parent_element: true
+    include_field_id: true
+
+expected:
+  condition: >
+    A hard-coded blankOption format mask value used by more than one
+    applicable public field is identified for replacement with a field
+    reference, unless excluded by an applicable entry in
+    AgentRules/Exclusions.yaml.
+
+violation:
+  when: >
+    A public field contains a definition/formatMask/@value containing
+    'blankOption:', the same hard-coded blankOption value is used by more
+    than one applicable field, the candidate is not excluded by an
+    applicable entry in AgentRules/Exclusions.yaml, and the candidate is
+    confirmed against the current application filesystem.
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //public[
+          definition/formatMask[contains(@value,'blankOption:')]
+          and
+          not(
+            @id =
+            msxsl:node-set($CustomExclusions)/module[@id='BO']/field/@id
+          )
+          and
+          not(
+            @id =
+            msxsl:node-set($BaseExclusions)/module[@id='BO']/field/@id
+          )
+        ]
+    - >
+        definition/formatMask/@value
+    - >
+        msxsl:node-set($Content)/field[
+          following-sibling::field/@formatMask = @formatMask
+          or
+          preceding-sibling::field/@formatMask = @formatMask
+        ]
+    - >
+        @formatMask
+    - >
+        @id
+
+notes:
+  - >
+    The original XSL selector identifies public fields containing a
+    hard-coded blankOption format mask and applies legacy
+    CustomExclusions/BaseExclusions.
+
+  - >
+    The deterministic Select-Xml validation identifies the structural BO
+    candidate set first. Duplicate blankOption usage must then be evaluated
+    before a candidate can become a confirmed violation.
+
+  - >
+    Candidate-level exclusion evaluation is performed using
+    AgentRules/Exclusions.yaml before reporting a confirmed violation.
+
+  - >
+    CustomExclusions and BaseExclusions are retained in original_logic
+    for traceability to the legacy XSL only and are not runtime exclusion
+    sources for the current AgentRule.
+
+  - >
+    The original rule is deprecated by the Hard-coded Values module, but
+    the BO AgentRule remains executable according to its defined legacy
+    semantics.
+
+  - >
+    The validation procedure must remain semantically aligned with the
+    original BO XSL and must not introduce a different XML structure.
+
+  - >
+    Generated skeletons must not overwrite manually curated rule semantics.

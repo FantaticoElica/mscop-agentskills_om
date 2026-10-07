@@ -1,0 +1,141 @@
+﻿```yaml
+id: AE
+name: 'Always Execute'
+category: 'Performance'
+status: READY
+validation: VALIDATED
+generated: true
+
+description: >
+  Field values are cached for performance reasons and only calculated when
+  absolutely necessary. However, this can be overridden by selecting
+  Always Execute on the field. The number of fields that have this set
+  should be kept to an absolute minimum.
+
+source:
+  file: files/source/MsCop/AlwaysExecute.xsl
+  module_id: AE
+  templates:
+    - AlwaysExecute
+    - AE_XML
+    - AE_HTML
+    - AE_Data
+    - AE_AddRow_XML
+    - AE_AddRow_HTML
+
+target:
+  primary_selector: >
+    //*[@alwaysRun='1']
+  inspected_selectors:
+    - >
+        //*[@alwaysRun='1']
+    - >
+        @id
+    - >
+        @alwaysRun
+
+condition:
+  original_xsl_tests:
+    - >
+      The original MSCop selector identifies every XML element whose
+      @alwaysRun attribute is exactly '1'. Legacy CustomExclusions and
+      BaseExclusions are not executed as part of the deterministic validator;
+      candidate-level exclusions are evaluated through AgentRules/Exclusions.yaml.
+
+exclusions:
+  - Resolve candidate-level exclusions from AgentRules/Exclusions.yaml.
+  - Do not reconstruct or execute legacy CustomExclusions/BaseExclusions.
+  - If no applicable AE candidate-level exclusions are configured,
+    no candidates are excluded.
+
+evidence:
+  required:
+    - file
+    - location
+    - actual_value
+    - field_id
+
+validation_procedure:
+  type: powershell_select_xml
+  command_template: |
+    [xml]$xml = Get-Content -LiteralPath "<XML_FILE>" -Raw
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    $nodes = $xml.SelectNodes("//*[@alwaysRun='1']")
+
+    $sortedNodes = @(
+        $nodes | Sort-Object { $_.GetAttribute("id") }
+    )
+
+    foreach ($node in $sortedNodes) {
+        $fieldID = $node.GetAttribute("id")
+        $alwaysRun = $node.GetAttribute("alwaysRun")
+
+        $results.Add([PSCustomObject]@{
+            FieldID    = $fieldID
+            ActualValue = $alwaysRun
+            Location   = "@alwaysRun"
+        })
+    }
+
+    $results
+
+  execution_constraints:
+    - >
+      Execute the command_template directly for each applicable XML file,
+      replacing <XML_FILE> with the exact current XML file path.
+    - >
+      The command_template is the authoritative deterministic validation
+      procedure for this AgentRule.
+    - >
+      Do not replace the command with an alternative XPath, PowerShell
+      implementation, regex, LLM-based XML inspection, or independently
+      recreated validation logic.
+    - >
+      Do not modify the command semantics while executing it.
+    - >
+      The execution wrapper may only provide the XML file path, execute the
+      command, collect its results, and preserve per-file isolation.
+    - >
+      Parse failures must be captured per file and must not silently convert
+      into zero findings.
+    - >
+      Candidate-level exclusions must be evaluated after candidates are
+      produced by the command.
+
+  candidate_definition:
+    identifier: FieldID
+    violation_condition: >
+      A candidate is produced when an XML element has @alwaysRun='1'.
+
+  ordering:
+    source_nodes:
+      - '@id ascending'
+
+original_logic:
+  exact_select_expressions:
+    - >
+        //*[@alwaysRun='1' and not(@id =
+        msxsl:node-set($CustomExclusions)/module[@id='AE']/item/@id)
+        and not(@id =
+        msxsl:node-set($BaseExclusions)/module[@id='AE']/item/@id)]
+    - >
+        @id
+
+notes:
+  - >
+    The original XSL semantics are preserved: @alwaysRun='1' is the
+    detection condition.
+  - >
+    Legacy CustomExclusions and BaseExclusions are retained as traceability
+    only and are not independently executed by the AgentRule.
+  - >
+    Candidate-level exclusions are governed by AgentRules/Exclusions.yaml.
+  - >
+    FileFolderExclusions.yaml is handled by the ApplicationCompliance Skill
+    during normal filesystem traversal.
+  - >
+    The ApplicationCompliance Skill controls final user-facing output and
+    HTML report generation.
+```

@@ -1,0 +1,30 @@
+version: "1.0"
+status: READY
+validation: CONFIGURATION
+
+# Files and folders listed here are excluded from analysis.
+#
+# File/folder exclusions are checked during normal filesystem traversal
+# of the user-supplied application path.
+#
+# If a folder matches, skip the entire folder and do not enter it.
+# If a file matches, skip the entire file.
+#
+# Non-matching files and folders continue through the normal selected
+# AgentRule analysis.
+
+matching:
+  comparison: contains
+  case_sensitive: false
+  whitespace_sensitive: true
+  normalization: none
+
+exclusions:
+
+  - id: FFE-001
+    type: folder
+    name: DCT
+    reason: "Skip folders whose name contains DCT."
+
+  
+  
